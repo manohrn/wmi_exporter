@@ -1,0 +1,55 @@
+# Import the necessary modules
+Import-Module OperationsManager
+Import-Module Polaris
+
+# Define the SCOM Management Server
+$scomServer = "YourScomServer"
+$scomUser = "YourScomUsername"
+$scomPassword = ConvertTo-SecureString -String "YourScomPassword" -AsPlainText -Force
+$credential = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $scomUser, $scomPassword
+
+# Connect to the SCOM Management Server
+New-SCOMManagementGroupConnection -ComputerName $scomServer -Credential $credential
+
+# Function to get SCOM components health status
+function Get-SCOMComponentsHealthStatus {
+    $healthStates = Get-SCOMMonitoringObject -Class (Get-SCOMClass -Name "Microsoft.SystemCenter.HealthService") -HealthStateFilter 2, 3
+    $metrics = @()
+
+    foreach ($state in $healthStates) {
+        $componentName = $state.DisplayName
+        $healthState = switch ($state.HealthState) {
+            0 { "Healthy" }
+            1 { "Warning" }
+            2 { "Critical" }
+            3 { "Unknown" }
+        }
+
+        $metrics += "scom_component_health_status{name=`"$componentName`"} $($state.HealthState)"
+    }
+
+    return $metrics -join "`n"
+}
+
+# Create Polaris server and endpoint to expose metrics
+$server = Start-Polaris -Port 8080
+New-PolarisRoute -Method GET -Path "/metrics" -ScriptBlock {
+    $metrics = Get-SCOMComponentsHealthStatus
+    $Response.Send($metrics)
+}
+
+# Schedule task to update metrics every 5 minutes
+$scriptBlock = {
+    Get-SCOMComponentsHealthStatus | Out-File -FilePath "C:\Temp\scom_metrics.prom" -Force
+}
+$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(5) -RepetitionInterval (New-TimeSpan -Minutes 5)
+$principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
+$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -WindowStyle Hidden -File C:\Path\To\YourScript.ps1"
+
+Register-ScheduledTask -TaskName "UpdateSCOMMetrics" -Trigger $trigger -Principal $principal -Settings $settings -Action $action
+
+# Keep the script running
+while ($true) {
+    Start-Sleep -Seconds 60
+}
