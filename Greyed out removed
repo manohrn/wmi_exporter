@@ -1,0 +1,58 @@
+# Import necessary modules
+Import-Module OperationsManager
+Import-Module ServiceNow
+
+# SCOM and ServiceNow Configuration
+$scomServer = "YourScomServer"
+$scomUser = "YourScomUsername"
+$scomPassword = ConvertTo-SecureString -String "YourScomPassword" -AsPlainText -Force
+$credential = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $scomUser, $scomPassword
+$serviceNowUrl = "https://your_instance.service-now.com"
+$serviceNowUser = "YourServiceNowUsername"
+$serviceNowPassword = "YourServiceNowPassword"
+
+# Connect to the SCOM Management Server
+New-SCOMManagementGroupConnection -ComputerName $scomServer -Credential $credential
+
+# Function to get greyed-out SCOM agents
+function Get-GreyedOutSCOMAgents {
+    $agents = Get-SCOMAgent | Where-Object { $_.HealthState -eq "Uninitialized" }
+    return $agents
+}
+
+# Function to get ServiceNow CI status
+function Get-ServiceNowCIStatus {
+    param (
+        [string]$ciName
+    )
+    
+    $serviceNowCredential = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $serviceNowUser, (ConvertTo-SecureString $serviceNowPassword -AsPlainText -Force)
+    $uri = "$serviceNowUrl/api/now/table/cmdb_ci?sysparm_query=name=$ciName&sysparm_fields=name,operational_status"
+    $response = Invoke-RestMethod -Uri $uri -Method Get -Credential $serviceNowCredential -ContentType "application/json"
+    
+    if ($response.result) {
+        return $response.result.operational_status
+    } else {
+        return "Not Found"
+    }
+}
+
+# Function to remove decommissioned SCOM agents
+function Remove-DecommissionedSCOMAgents {
+    $greyedOutAgents = Get-GreyedOutSCOMAgents
+
+    foreach ($agent in $greyedOutAgents) {
+        $ciName = $agent.DisplayName
+        $ciStatus = Get-ServiceNowCIStatus -ciName $ciName
+
+        if ($ciStatus -eq "Decommissioned") {
+            Write-Host "Removing decommissioned agent: $ciName"
+            $agent | Remove-SCOMDisabledClassInstance -Confirm:$false
+        } else {
+            Write-Host "Agent $ciName is not decommissioned, status: $ciStatus"
+        }
+    }
+}
+
+# Run the removal process
+Remove-DecommissionedSCOMAgents
