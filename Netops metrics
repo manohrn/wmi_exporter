@@ -1,0 +1,50 @@
+from prometheus_client import start_http_server, Gauge
+import requests
+import time
+
+# Replace these with your Spectrum NetOps API details
+NETOPS_API_URL = 'https://your-spectrum-netops-api-endpoint'
+API_TOKEN = 'your_api_token'
+POLL_INTERVAL = 60  # Polling interval in seconds
+
+# Define Prometheus metrics
+device_status = Gauge('network_device_status', 'Status of the network device', ['device_id'])
+device_latency = Gauge('network_device_latency', 'Latency of the network device', ['device_id'])
+device_packet_loss = Gauge('network_device_packet_loss', 'Packet loss of the network device', ['device_id'])
+
+def fetch_device_metrics():
+    headers = {
+        'Authorization': f'Bearer {API_TOKEN}'
+    }
+    try:
+        response = requests.get(f'{NETOPS_API_URL}/devices', headers=headers)
+        response.raise_for_status()
+        devices = response.json()
+
+        for device in devices:
+            device_id = device.get('id')
+            status = device.get('status')
+            latency = device.get('latency')
+            packet_loss = device.get('packet_loss')
+
+            # Update Prometheus metrics
+            if device_id:
+                if status is not None:
+                    device_status.labels(device_id=device_id).set(status)
+                if latency is not None:
+                    device_latency.labels(device_id=device_id).set(latency)
+                if packet_loss is not None:
+                    device_packet_loss.labels(device_id=device_id).set(packet_loss)
+
+    except requests.RequestException as e:
+        print(f"Error fetching data from Spectrum NetOps: {e}")
+
+if __name__ == '__main__':
+    # Start up the server to expose the metrics.
+    start_http_server(8000)
+    print("Prometheus metrics server started on port 8000")
+    
+    # Poll the Spectrum NetOps API at regular intervals
+    while True:
+        fetch_device_metrics()
+        time.sleep(POLL_INTERVAL)
