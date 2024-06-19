@@ -1,0 +1,52 @@
+import requests
+from confluent_kafka import Producer
+import json
+
+# Configuration for Mimir API
+MIMIR_API_URL = 'http://your_mimir_api_endpoint/api/v1/query'
+MIMIR_QUERY = 'up'  # Example query, modify as needed
+MIMIR_HEADERS = {
+    'Authorization': 'Bearer your_api_token',  # If authentication is required
+    'Content-Type': 'application/json'
+}
+
+# Configuration for Kafka
+KAFKA_CONFIG = {
+    'bootstrap.servers': 'your_kafka_broker',
+    'client.id': 'mimir-metrics-producer'
+}
+KAFKA_TOPIC = 'mimir_metrics'
+
+def fetch_metrics(api_url, query, headers):
+    """Fetch metrics from Mimir API."""
+    response = requests.get(f"{api_url}?query={query}", headers=headers)
+    response.raise_for_status()
+    return response.json()
+
+def produce_to_kafka(producer, topic, message):
+    """Produce messages to Kafka topic."""
+    producer.produce(topic, message)
+    producer.flush()
+
+if __name__ == '__main__':
+    # Initialize Kafka producer
+    producer = Producer(KAFKA_CONFIG)
+
+    try:
+        # Fetch metrics from Mimir API
+        metrics_response = fetch_metrics(MIMIR_API_URL, MIMIR_QUERY, MIMIR_HEADERS)
+        
+        # Check for data in the response
+        if 'data' in metrics_response and 'result' in metrics_response['data']:
+            for metric in metrics_response['data']['result']:
+                # Convert metric data to JSON string
+                message = json.dumps(metric)
+                
+                # Produce message to Kafka
+                produce_to_kafka(producer, KAFKA_TOPIC, message)
+                print(f'Produced to Kafka: {message}')
+        else:
+            print('No metrics data found in the response')
+                
+    except Exception as e:
+        print(f'Error: {e}')
