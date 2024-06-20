@@ -1,0 +1,36 @@
+Here is a cleaner version of the architecture flow diagram, focusing on clarity and simplicity:
+
+	1.	Mimir API:
+	•	Data Source: Collect metrics for both Windows and Linux systems.
+	•	Endpoints: Specific endpoints for Windows and Linux metrics.
+	2.	Scheduler:
+	•	Regular Intervals: A scheduler to query the Mimir API at regular intervals.
+	•	Tasks: Separate tasks for querying Windows and Linux metrics.
+	3.	Data Collector:
+	•	API Client: Interfaces with the Mimir API to fetch metrics.
+	•	Error Handling: Handles retries and errors during API calls.
+	4.	Data Processor:
+	•	Parser: Parses the JSON response from the API.
+	•	Transformation: Transforms the data into the desired format for Kafka.
+	5.	Kafka Producer:
+	•	Windows Metrics Topic: Writes Windows metrics to a specific Kafka topic.
+	•	Linux Metrics Topic: Writes Linux metrics to a different Kafka topic.
+	•	Configuration: Configures Kafka producer properties (e.g., brokers, topic names).
+
+Refined Diagram Layout
+
+	1.	Mimir API:
+	•	Box labeled “Mimir API” with two arrows labeled “Windows Metrics Endpoint” and “Linux Metrics Endpoint”.
+
+	2.	Scheduler:
+	•	Box labeled “Scheduler” connected to “Data Collector” with arrows indicating regular intervals for each metric type.
+	3.	Data Collector:
+	•	Box labeled “Data Collector” with arrows to “Mimir API” endpoints.
+	•	Arrows from “Data Collector” to “Data Processor”.
+	4.	Data Processor:
+	•	Box labeled “Data Processor” with arrows from “Data Collector”.
+	•	Arrows from “Data Processor” to “Kafka Producer”.
+	5.	Kafka Producer:
+	•	Box labeled “Kafka Producer”.
+	•	Two arrows from “Kafka Producer” to “Kafka Topics” labeled “Windows Metrics Topic” and “Linux Metrics Topic”.
+
