@@ -1,0 +1,65 @@
+To check the status of alerts (whether they are suppressed or active) via Mimir tools or the Alertmanager API, you can follow these steps:
+
+Using Mimir Tools
+
+	1.	Install Mimir Tools: Ensure you have Mimir tools installed.
+
+go install github.com/grafana/mimir/tools/...
+
+
+	2.	Query Alertmanager for Alert Status: Use Mimir tools to query the Alertmanager API and retrieve the status of alerts. Here is an example command:
+
+mimirtool alert list -u http://<alertmanager-ip>:<alertmanager-port>/api/v2/alerts
+
+	2.	This command fetches a list of alerts from Alertmanager. You can then inspect the output to check the status of each alert.
+
+Using Alertmanager API Directly
+
+	1.	Query Alerts: You can directly query the Alertmanager API to get the status of alerts. Use the following API endpoint to fetch all alerts:
+
+curl http://<alertmanager-ip>:<alertmanager-port>/api/v2/alerts
+
+	1.	This returns a JSON array of all alerts, including their status.
+	2.	Filter and Check Status: Look for the status field in the JSON response. The status field will indicate whether the alert is active or suppressed.
+
+Here is an example of what the JSON response might look like:
+
+[
+  {
+    "status": {
+      "state": "active",  // Can be "active" or "suppressed"
+      "silencedBy": [],
+      "inhibitedBy": []
+    },
+    "labels": {
+      "alertname": "TestAlert",
+      "severity": "critical",
+      "instance": "test-instance"
+    },
+    "annotations": {
+      "summary": "This is a test alert"
+    },
+    "startsAt": "2024-06-26T00:00:00Z",
+    "endsAt": "2024-06-26T01:00:00Z",
+    "generatorURL": "http://example.com"
+  }
+]
+
+	•	state: Indicates whether the alert is active or suppressed.
+	•	silencedBy: Lists the IDs of any silences that are affecting this alert.
+	•	inhibitedBy: Lists the IDs of any inhibition rules that are affecting this alert.
+
+Example Command for Curl
+
+To check the status of alerts directly using curl, you can use a command like this:
+
+curl -s http://localhost:9093/api/v2/alerts | jq '.[] | {alertname: .labels.alertname, state: .status.state, silencedBy: .status.silencedBy, inhibitedBy: .status.inhibitedBy}'
+
+This command fetches the alerts and uses jq to filter and display relevant fields.
+
+Summary
+
+Using Mimir tools or directly querying the Alertmanager API allows you to retrieve the status of your alerts and determine if they are active or suppressed.
+
+Sponsored
+Largest directory of chatbots on the internet.
