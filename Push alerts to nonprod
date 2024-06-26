@@ -1,0 +1,35 @@
+import requests
+import json
+
+# Define the Alertmanager URL
+alertmanager_url = 'http://alertmanager.example.com/api/v1/alerts'
+
+# Create the alert payload
+alert = [
+    {
+        "labels": {
+            "alertname": "InstanceDown",
+            "instance": "localhost:9090",
+            "severity": "critical"
+        },
+        "annotations": {
+            "summary": "Instance localhost:9090 is down",
+            "description": "The instance is not reachable."
+        },
+        "startsAt": "2024-06-25T00:00:00Z",
+        "endsAt": "2024-06-26T00:00:00Z",
+        "generatorURL": "http://prometheus.example.com/graph?g0.expr=up%7Bjob%3D%22example%22%7D&g0.tab=1"
+    }
+]
+
+# Convert the alert to JSON format
+alert_json = json.dumps(alert)
+
+# Send the alert to Alertmanager
+response = requests.post(alertmanager_url, data=alert_json, headers={'Content-Type': 'application/json'})
+
+# Check the response status
+if response.status_code == 200:
+    print('Alert sent successfully!')
+else:
+    print(f'Failed to send alert. Status code: {response.status_code}, Response: {response.text}')
