@@ -18,14 +18,21 @@ response = requests.get(
 # Check the response status
 if response.status_code == 200:
     alerts = response.json()
+    inhibited_alerts = []
     for alert in alerts:
-        alertname = alert.get('labels', {}).get('alertname', 'Unknown Alert')
         status = alert.get('status', {})
         inhibited_by = status.get('inhibitedBy', [])
 
         if inhibited_by:
+            inhibited_alerts.append(alert)
+    
+    # Print inhibited alerts
+    if inhibited_alerts:
+        for alert in inhibited_alerts:
+            alertname = alert.get('labels', {}).get('alertname', 'Unknown Alert')
+            inhibited_by = alert.get('status', {}).get('inhibitedBy', [])
             print(f'Alert "{alertname}" is inhibited by {len(inhibited_by)} alerts: {inhibited_by}')
-        else:
-            print(f'Alert "{alertname}" is not inhibited.')
+    else:
+        print('No inhibited alerts found.')
 else:
     print(f'Failed to query alerts. Status code: {response.status_code}, Response: {response.text}')
