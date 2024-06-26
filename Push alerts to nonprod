@@ -1,8 +1,8 @@
 import requests
 import json
 
-# Define the Alertmanager URL
-alertmanager_url = 'http://alertmanager.example.com/api/v1/alerts'
+# Define the Alertmanager URL (replace with your Grafana Cloud URL)
+alertmanager_url = 'https://<your-grafana-cloud-instance>.grafana.net/api/v1/alerts'
 
 # Create the alert payload
 alert = [
@@ -25,8 +25,20 @@ alert = [
 # Convert the alert to JSON format
 alert_json = json.dumps(alert)
 
+# Define your Grafana Cloud credentials
+username = 'your_grafana_cloud_username'
+api_key = 'your_grafana_cloud_api_key'
+
 # Send the alert to Alertmanager
-response = requests.post(alertmanager_url, data=alert_json, headers={'Content-Type': 'application/json'})
+response = requests.post(
+    alertmanager_url,
+    data=alert_json,
+    headers={
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {api_key}'
+    },
+    auth=(username, api_key)
+)
 
 # Check the response status
 if response.status_code == 200:
