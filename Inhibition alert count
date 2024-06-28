@@ -1,0 +1,38 @@
+import requests
+import json
+from datetime import datetime, timedelta
+from collections import defaultdict
+
+# Replace with your Grafana Cloud details
+GRAFANA_API_TOKEN = 'your_grafana_api_token'
+GRAFANA_API_URL = 'https://your_grafana_cloud_url/api/prometheus/alertmanager/api/v2/inhibitions'
+
+# Function to get the count of inhibition alerts for each day in the past week
+def get_daily_inhibition_alerts_count_past_week():
+    headers = {
+        'Authorization': f'Bearer {GRAFANA_API_TOKEN}',
+        'Content-Type': 'application/json'
+    }
+
+    response = requests.get(GRAFANA_API_URL, headers=headers)
+    
+    if response.status_code == 200:
+        inhibitions = response.json()
+        one_week_ago = datetime.now() - timedelta(days=7)
+        daily_count = defaultdict(int)
+        
+        # Filter inhibitions from the past week and group by day
+        for inhibition in inhibitions:
+            created_at = datetime.strptime(inhibition['createdAt'], '%Y-%m-%dT%H:%M:%S.%fZ')
+            if created_at > one_week_ago:
+                day = created_at.date()
+                daily_count[day] += 1
+        
+        for day in sorted(daily_count.keys()):
+            print(f'Date: {day}, Count: {daily_count[day]}')
+    else:
+        print(f'Failed to fetch inhibition alerts. Status code: {response.status_code}')
+        print(f'Response: {response.text}')
+
+if __name__ == "__main__":
+    get_daily_inhibition_alerts_count_past_week()
