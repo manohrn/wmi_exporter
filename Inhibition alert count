@@ -1,38 +1,54 @@
 import requests
-import json
 from datetime import datetime, timedelta
-from collections import defaultdict
 
-# Replace with your Grafana Cloud details
-GRAFANA_API_TOKEN = 'your_grafana_api_token'
-GRAFANA_API_URL = 'https://your_grafana_cloud_url/api/prometheus/alertmanager/api/v2/inhibitions'
+# Grafana Cloud API details
+GRAFANA_CLOUD_API_URL = "https://<your-grafana-instance>/api/prom/alerts"
+API_KEY = "Bearer <your-api-key>"  # Replace with your Grafana Cloud API key
 
-# Function to get the count of inhibition alerts for each day in the past week
-def get_daily_inhibition_alerts_count_past_week():
-    headers = {
-        'Authorization': f'Bearer {GRAFANA_API_TOKEN}',
-        'Content-Type': 'application/json'
-    }
+def get_inhibition_alert_count_by_day():
+    # Calculate the time range for the past week
+    end_time = datetime.utcnow()
+    start_time = end_time - timedelta(days=7)
 
-    response = requests.get(GRAFANA_API_URL, headers=headers)
-    
-    if response.status_code == 200:
-        inhibitions = response.json()
-        one_week_ago = datetime.now() - timedelta(days=7)
-        daily_count = defaultdict(int)
-        
-        # Filter inhibitions from the past week and group by day
-        for inhibition in inhibitions:
-            created_at = datetime.strptime(inhibition['createdAt'], '%Y-%m-%dT%H:%M:%S.%fZ')
-            if created_at > one_week_ago:
-                day = created_at.date()
-                daily_count[day] += 1
-        
-        for day in sorted(daily_count.keys()):
-            print(f'Date: {day}, Count: {daily_count[day]}')
-    else:
-        print(f'Failed to fetch inhibition alerts. Status code: {response.status_code}')
-        print(f'Response: {response.text}')
+    # Initialize a dictionary to hold the count for each day
+    daily_counts = {}
 
-if __name__ == "__main__":
-    get_daily_inhibition_alerts_count_past_week()
+    # Iterate over each day in the past week
+    for i in range(7):
+        day_start = start_time + timedelta(days=i)
+        day_end = day_start + timedelta(days=1)
+
+        # Convert to RFC3339 format
+        day_start_str = day_start.strftime('%Y-%m-%dT%H:%M:%SZ')
+        day_end_str = day_end.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+        # Define the parameters for the API request
+        params = {
+            "start": day_start_str,
+            "end": day_end_str
+        }
+
+        # Headers for authorization
+        headers = {
+            "Authorization": API_KEY,
+            "Content-Type": "application/json"
+        }
+
+        # Make the API request to fetch alerts
+        response = requests.get(GRAFANA_CLOUD_API_URL, headers=headers, params=params)
+
+        if response.status_code == 200:
+            alerts = response.json()
+            inhibition_alert_count = sum(1 for alert in alerts if alert.get("status", {}).get("state") == "inhibited")
+            # Store the count for this day
+            daily_counts[day_start.strftime('%Y-%m-%d')] = inhibition_alert_count
+        else:
+            print(f"Failed to fetch alerts for {day_start.strftime('%Y-%m-%d')}. Status code: {response.status_code}")
+            daily_counts[day_start.strftime('%Y-%m-%d')] = None
+
+    return daily_counts
+
+# Fetch and print the inhibition alert count for each day
+counts = get_inhibition_alert_count_by_day()
+for day, count in counts.items():
+    print(f"Inhibition alert count for {day}: {count}")
