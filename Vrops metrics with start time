@@ -1,0 +1,51 @@
+import requests
+import json
+import time
+
+# Replace with your vROps API details
+vrops_url = "https://vrops.example.com"
+api_endpoint = "/suite-api/api/resources"
+api_url = f"{vrops_url}{api_endpoint}"
+username = "your_username"
+password = "your_password"
+
+# Start time of script execution
+start_time = time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime())
+
+def get_vrops_cluster_metrics():
+    try:
+        # Make the API call to vROps
+        response = requests.get(api_url, auth=(username, password), verify=False)
+        
+        # Check if the request was successful
+        if response.status_code == 200:
+            metrics = response.json()
+            return metrics
+        else:
+            print(f"Failed to retrieve metrics: {response.status_code}")
+            return None
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+        return None
+
+def main():
+    # Get the cluster metrics
+    cluster_metrics = get_vrops_cluster_metrics()
+    
+    if cluster_metrics:
+        # Create a dictionary with the start time and metrics
+        result = {
+            "start_time": start_time,
+            "metrics": cluster_metrics
+        }
+
+        # Convert the dictionary to a JSON formatted string
+        result_json = json.dumps(result, indent=4)
+        
+        # Print the JSON result
+        print(result_json)
+    else:
+        print("No metrics retrieved.")
+
+if __name__ == "__main__":
+    main()
