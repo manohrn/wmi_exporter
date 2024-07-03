@@ -1,0 +1,69 @@
+import os
+import requests
+import json
+import time
+
+def get_vrops_cluster_metrics():
+    # Load environment variables
+    vrops_url = os.getenv('VROPS_URL')
+    username = os.getenv('VROPS_USERNAME')
+    password = os.getenv('VROPS_PASSWORD')
+    domain = os.getenv('VROPS_DOMAIN')
+
+    if not all([vrops_url, username, password, domain]):
+        raise ValueError("Please set VROPS_URL, VROPS_USERNAME, VROPS_PASSWORD, and VROPS_DOMAIN environment variables")
+
+    # API endpoints
+    resources_api_endpoint = "/suite-api/api/resources"
+    resource_metrics_api_endpoint = "/suite-api/api/resources/{resource_id}/stats"
+
+    # Start time of script execution
+    start_time = time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime())
+
+    results = {}
+
+    try:
+        # Construct the auth headers with domain
+        auth_headers = {
+            "Authorization": f"Basic {requests.auth._basic_auth_str(f'{domain}\\{username}', password)}"
+        }
+        
+        # Get all resource IDs
+        response = requests.get(f"{vrops_url}{resources_api_endpoint}", headers=auth_headers, verify=False)
+        
+        # Check if the request was successful
+        if response.status_code == 200:
+            resources = response.json()
+            resource_ids = [resource['identifier'] for resource in resources['resourceList']]
+        else:
+            print(f"Failed to retrieve resource IDs: {response.status_code}")
+            return
+        
+        # Get metrics for each resource ID
+        for resource_id in resource_ids:
+            response = requests.get(f"{vrops_url}{resource_metrics_api_endpoint.format(resource_id=resource_id)}", headers=auth_headers, verify=False)
+            
+            # Check if the request was successful
+            if response.status_code == 200:
+                metrics = response.json()
+                results[resource_id] = metrics
+            else:
+                print(f"Failed to retrieve metrics for resource {resource_id}: {response.status_code}")
+
+        # Create a dictionary with the start time and metrics
+        result = {
+            "start_time": start_time,
+            "metrics": results
+        }
+
+        # Convert the dictionary to a JSON formatted string
+        result_json = json.dumps(result, indent=4)
+        
+        # Print the JSON result
+        print(result_json)
+        
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+if __name__ == "__main__":
+    get_vrops_cluster_metrics()
