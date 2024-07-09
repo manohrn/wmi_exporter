@@ -1,0 +1,47 @@
+import requests
+import json
+
+# Grafana Mimir API endpoint
+GRAFANA_CLOUD_API_URL = "https://mimir.grafana.net/api/prom/rules/<namespace>"
+
+# Replace with your Grafana Cloud API key
+GRAFANA_API_KEY = "your_grafana_api_key"
+
+# Define the headers
+headers = {
+    "Authorization": f"Bearer {GRAFANA_API_KEY}",
+    "Content-Type": "application/json"
+}
+
+# Define the alert rule
+alert_rule = {
+    "name": "example_alert_rule",
+    "interval": "1m",
+    "rules": [
+        {
+            "alert": "HighCPUUsage",
+            "expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{mode='idle'}[5m])) * 100) > 80",
+            "for": "5m",
+            "labels": {
+                "severity": "warning"
+            },
+            "annotations": {
+                "summary": "High CPU usage detected on {{ $labels.instance }}",
+                "description": "CPU usage is above 80% for more than 5 minutes."
+            }
+        }
+    ]
+}
+
+# Convert the alert rule to JSON
+alert_rule_json = json.dumps(alert_rule)
+
+# Post the alert rule to the Grafana Mimir API
+response = requests.post(GRAFANA_CLOUD_API_URL, headers=headers, data=alert_rule_json)
+
+# Check the response
+if response.status_code == 200:
+    print("Alert rule posted successfully!")
+else:
+    print(f"Failed to post alert rule: {response.status_code}")
+    print(response.text)
