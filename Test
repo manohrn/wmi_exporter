@@ -1,0 +1,33 @@
+import requests
+import json
+
+def post_alert_rules(mimir_api_url, alert_rules_json_path, username, api_key):
+    # Load the alert rules from the JSON file
+    with open(alert_rules_json_path, 'r') as file:
+        alert_rules = json.load(file)
+    
+    headers = {
+        "Content-Type": "application/json",
+    }
+    
+    # Basic authentication using username and API key
+    auth = (username, api_key)
+    
+    # Post the alert rules to the Mimir API endpoint
+    response = requests.post(mimir_api_url, headers=headers, auth=auth, json=alert_rules)
+    
+    # Check the response status
+    if response.status_code == 200 or response.status_code == 201:
+        print("Alert rules successfully posted.")
+    else:
+        print(f"Failed to post alert rules: {response.status_code}")
+        print(response.text)
+
+# Input parameters
+mimir_api_url = "https://mimir.example.com/api/v1/rules"
+alert_rules_json_path = "alert_rules.json"  # Path to your alert rules JSON file
+username = "your_username"
+api_key = "your_api_key"
+
+# Post the alert rules to the Mimir API
+post_alert_rules(mimir_api_url, alert_rules_json_path, username, api_key)
