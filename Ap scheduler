@@ -1,0 +1,22 @@
+from apscheduler.schedulers.blocking import BlockingScheduler
+import subprocess
+import datetime
+
+# Function to be scheduled
+def scheduled_task():
+    print(f"Task started at {datetime.datetime.now()}")
+    subprocess.run(["python", "main_script.py"])
+    print(f"Task completed at {datetime.datetime.now()}")
+
+# Create a scheduler instance
+scheduler = BlockingScheduler()
+
+# Add the job to the scheduler
+scheduler.add_job(scheduled_task, 'interval', minutes=5)
+
+# Start the scheduler
+try:
+    print("Scheduler started, task will execute every 5 minutes.")
+    scheduler.start()
+except (KeyboardInterrupt, SystemExit):
+    print("Scheduler stopped.")
