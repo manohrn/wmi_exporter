@@ -1,0 +1,25 @@
+#!/bin/bash
+
+# Output file
+output_file="top_cpu_processes.csv"
+
+# Get the top 10 processes by CPU usage and format as CSV
+ps -eo pid,ppid,comm,cmd,%cpu --sort=-%cpu | head -n 11 | awk '
+BEGIN {
+    FS=" ";
+    OFS=",";
+    print "PID,PPID,Process Name,Command,CPU Usage (%)"
+}
+NR>1 {
+    pid = $1;
+    ppid = $2;
+    pname = $3;
+    cmd = "";
+    for (i=4; i<=NF-1; i++) {
+        cmd = cmd $i " ";
+    }
+    cpu = $(NF);
+    print pid, ppid, pname, cmd, cpu
+}' > $output_file
+
+echo "Top 10 CPU consuming processes saved to $output_file"
