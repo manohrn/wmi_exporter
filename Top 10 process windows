@@ -1,0 +1,30 @@
+# Output file
+$outputFile = "top_cpu_processes.csv"
+
+# Get the top 10 processes by CPU usage
+$topProcesses = Get-Process | Sort-Object -Property CPU -Descending | Select-Object -First 10
+
+# Create a CSV header
+"PID,PPID,Process Name,Command,CPU Usage (%)" | Out-File -FilePath $outputFile
+
+# Function to get the parent process ID
+function Get-ParentProcessId {
+    param (
+        [int]$pid
+    )
+
+    $process = Get-CimInstance -Query "SELECT * FROM Win32_Process WHERE ProcessId = $pid"
+    return $process.ParentProcessId
+}
+
+# Collect and format the process information
+foreach ($process in $topProcesses) {
+    $pid = $process.Id
+    $ppid = Get-ParentProcessId -pid $pid
+    $processName = $process.ProcessName
+    $command = try { (Get-Process -Id $pid | Select-Object -ExpandProperty Path) } catch { "N/A" }
+    $cpu = [math]::Round($process.CPU, 2)
+    "$pid,$ppid,$processName,$command,$cpu" | Out-File -FilePath $outputFile -Append
+}
+
+Write-Output "Top 10 CPU consuming processes saved to $outputFile"
