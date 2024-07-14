@@ -1,0 +1,71 @@
+To update the script and service name to toolkit_exporter, follow these steps:
+
+	1.	Create the Python Script:
+Ensure your Python script named toolkit_exporter.py is located in a suitable directory. For this example, we’ll assume it’s located at /home/grfclagt/toolkit_exporter.py.
+	2.	Create a Systemd Service File:
+Create a systemd service file to run your script. You’ll need superuser privileges to create this file.
+
+sudo nano /etc/systemd/system/toolkit_exporter.service
+
+	2.	Add the following content to the file:
+
+[Unit]
+Description=Toolkit Exporter Python Script
+After=network.target
+
+[Service]
+User=grfclagt
+WorkingDirectory=/home/grfclagt
+ExecStart=/usr/bin/python3 /home/grfclagt/toolkit_exporter.py
+Restart=always
+StandardOutput=append:/opt/grfclagt/log/toolkit.log
+StandardError=append:/opt/grfclagt/log/toolkit.log
+
+[Install]
+WantedBy=multi-user.target
+
+
+	3.	Reload Systemd and Start the Service:
+Reload systemd to recognize the new service, start it, and enable it to run at boot.
+
+sudo systemctl daemon-reload
+sudo systemctl start toolkit_exporter.service
+sudo systemctl enable toolkit_exporter.service
+
+
+	4.	Set Up Log Rotation:
+Create a logrotate configuration file to rotate logs every 2 days. Create the file with the following command:
+
+sudo nano /etc/logrotate.d/toolkit_exporter
+
+	4.	Add the following content:
+
+/opt/grfclagt/log/toolkit.log {
+    daily
+    rotate 2
+    compress
+    missingok
+    notifempty
+    create 0640 grfclagt adm
+    postrotate
+        systemctl restart toolkit_exporter.service > /dev/null
+    endscript
+}
+
+
+	5.	Ensure the Log Directory Exists and is Writable:
+Make sure the directory /opt/grfclagt/log/ exists and is writable by the grfclagt user.
+
+sudo mkdir -p /opt/grfclagt/log
+sudo chown grfclagt:grfclagt /opt/grfclagt/log
+
+
+	6.	Restart Systemd and Logrotate:
+Restart systemd and logrotate to ensure everything is properly configured.
+
+sudo systemctl restart toolkit_exporter.service
+sudo logrotate /etc/logrotate.d/toolkit_exporter
+
+
+
+With these steps, your toolkit_exporter.py script will run as a systemd service under the grfclagt account, and logs will be stored in /opt/grfclagt/log/toolkit.log with rotation every 2 days.
