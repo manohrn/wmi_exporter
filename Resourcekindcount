@@ -1,0 +1,59 @@
+import requests
+
+# Function to get all virtual machine resources from a vROps instance
+def get_vm_resources(vrops_url, username, password):
+    api_endpoint = f"{vrops_url}/suite-api/api/resources"
+    auth = (username, password)
+    headers = {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+    }
+
+    page = 1
+    page_size = 1000
+    vm_resources = []
+
+    while True:
+        params = {
+            'page': page,
+            'pageSize': page_size,
+            'resourceKind': 'VirtualMachine'
+        }
+
+        response = requests.get(api_endpoint, headers=headers, auth=auth, params=params)
+        response.raise_for_status()
+
+        data = response.json()
+
+        vm_resources.extend(data['resourceList'])
+
+        if len(data['resourceList']) < page_size:
+            break
+
+        page += 1
+
+    return vm_resources
+
+# List of vROps instances with their credentials
+vrops_instances = [
+    {'url': 'https://vrops-instance-1', 'username': 'user1', 'password': 'pass1'},
+    {'url': 'https://vrops-instance-2', 'username': 'user2', 'password': 'pass2'},
+    {'url': 'https://vrops-instance-3', 'username': 'user3', 'password': 'pass3'},
+    # Add more instances as needed
+]
+
+# Get the virtual machine resource count for each vROps instance
+instance_counts = {}
+
+for instance in vrops_instances:
+    try:
+        vm_resources = get_vm_resources(instance['url'], instance['username'], instance['password'])
+        vm_count = len(vm_resources)
+        instance_counts[instance['url']] = vm_count
+    except Exception as e:
+        print(f"Failed to get resources from {instance['url']}: {e}")
+        instance_counts[instance['url']] = 'Error'
+
+# Print the count of virtual machine resources for each vROps instance
+for url, count in instance_counts.items():
+    print(f"vROps instance {url} has {count} virtual machine resources.")
