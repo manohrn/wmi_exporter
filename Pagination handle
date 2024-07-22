@@ -1,0 +1,64 @@
+import requests
+
+# Configuration
+API_URL = 'https://vrops-api-url'
+API_TOKEN = 'your_api_token'
+LIMIT = 1000
+
+# Headers for API requests
+HEADERS = {
+    'Authorization': f'Bearer {API_TOKEN}',
+    'Content-Type': 'application/json'
+}
+
+def fetch_paginated_resources(resource_url, limit=LIMIT):
+    resources = []
+    offset = 0
+    
+    while True:
+        params = {'limit': limit, 'offset': offset}
+        response = requests.get(resource_url, headers=HEADERS, params=params)
+        response.raise_for_status()
+        data = response.json()
+        
+        resources.extend(data['resourceList'])
+        
+        if len(data['resourceList']) < limit:
+            break
+        
+        offset += limit
+    
+    return resources
+
+def fetch_metrics_for_resource(resource_id, metric_url):
+    response = requests.get(metric_url.format(resource_id=resource_id), headers=HEADERS)
+    response.raise_for_status()
+    return response.json()
+
+def main():
+    # Endpoint to fetch resources (virtual machines)
+    resource_url = f'{API_URL}/api/resources'
+    
+    # Fetch all resources
+    all_resources = fetch_paginated_resources(resource_url)
+    
+    # Filter resources with count > 1000
+    large_resources = [resource for resource in all_resources if resource['resourceKind'] == 'VirtualMachine' and resource['count'] > 1000]
+    
+    # Fetch metrics for each large resource
+    metrics = []
+    for resource in large_resources:
+        resource_id = resource['id']
+        metric_url = f'{API_URL}/api/resources/{resource_id}/metrics'
+        resource_metrics = fetch_metrics_for_resource(resource_id, metric_url)
+        metrics.append({
+            'resource_id': resource_id,
+            'metrics': resource_metrics
+        })
+    
+    # Print or process the fetched metrics
+    for metric in metrics:
+        print(f"Resource ID: {metric['resource_id']}, Metrics: {metric['metrics']}")
+
+if __name__ == "__main__":
+    main()
