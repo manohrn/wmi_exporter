@@ -1,0 +1,55 @@
+import requests
+from requests.auth import HTTPBasicAuth
+import json
+
+# Set your vROps server details and credentials
+vrops_server = 'https://your-vrops-server'
+username = 'your-username'
+password = 'your-password'
+
+# vROps API endpoint to get the virtual machine resources
+api_endpoint = '/suite-api/api/resources'
+
+# Query parameters
+params = {
+    'resourceKind': 'VirtualMachine',
+    'pageSize': 1000,
+}
+
+def get_vm_count():
+    url = f"{vrops_server}{api_endpoint}"
+    auth = HTTPBasicAuth(username, password)
+    headers = {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+    }
+    
+    total_vms = 0
+    page = 0
+    while True:
+        # Update the page number
+        params['page'] = page
+        response = requests.get(url, headers=headers, auth=auth, params=params)
+        
+        if response.status_code != 200:
+            raise Exception(f"Error: {response.status_code}, {response.text}")
+        
+        data = response.json()
+        total_vms += len(data.get('resourceList', []))
+        
+        if len(data.get('resourceList', [])) < 1000:
+            break
+        
+        page += 1
+    
+    return total_vms
+
+if __name__ == "__main__":
+    try:
+        vm_count = get_vm_count()
+        if vm_count > 1000:
+            print(f"The total count of virtual machines is: {vm_count}")
+        else:
+            print(f"The total count of virtual machines is less than or equal to 1000: {vm_count}")
+    except Exception as e:
+        print(f"An error occurred: {e}")
