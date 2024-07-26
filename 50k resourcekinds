@@ -1,0 +1,43 @@
+import requests
+from requests.auth import HTTPBasicAuth
+
+# Define vROps API endpoint and credentials
+vrops_url = 'https://your_vrops_instance'
+username = 'your_username'
+password = 'your_password'
+
+# Initialize pagination variables
+page_size = 1000  # Number of items per page
+start_index = 0   # Starting index for the first page
+
+resource_kinds = []
+
+while True:
+    # Construct the API request URL with pagination parameters
+    api_url = f'{vrops_url}/suite-api/api/resourcekinds?start={start_index}&limit={page_size}'
+    
+    # Make the API request
+    response = requests.get(api_url, auth=HTTPBasicAuth(username, password), verify=False)
+    
+    # Raise an exception if the request failed
+    response.raise_for_status()
+    
+    # Parse the JSON response
+    data = response.json()
+    
+    # Append the resource kinds from this page to the list
+    resource_kinds.extend(data.get('resourceKind', []))
+    
+    # Check if there are more items to fetch
+    if len(data.get('resourceKind', [])) < page_size:
+        break
+    
+    # Update the starting index for the next page
+    start_index += page_size
+
+# Print the total number of resource kinds retrieved
+print(f'Total resource kinds retrieved: {len(resource_kinds)}')
+
+# Optionally, print the resource kinds
+for resource_kind in resource_kinds:
+    print(resource_kind)
