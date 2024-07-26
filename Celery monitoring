@@ -1,0 +1,92 @@
+from prometheus_client import start_http_server, Counter, Histogram, Gauge, Summary
+from celery import Celery
+from celery.signals import (
+    task_prerun, task_postrun, task_failure, task_retry, worker_ready,
+    worker_shutdown, task_received, task_started, task_succeeded
+)
+import psutil
+import time
+from threading import Thread
+
+# Create a Celery app instance
+app = Celery('tasks', broker='pyamqp://guest@localhost//')
+
+# Define Prometheus metrics
+TASKS_SENT = Counter('celery_tasks_sent_total', 'Total number of tasks sent')
+TASKS_COMPLETED = Counter('celery_tasks_completed_total', 'Total number of tasks completed')
+TASKS_FAILED = Counter('celery_tasks_failed_total', 'Total number of tasks failed')
+TASKS_RETRIED = Counter('celery_tasks_retried_total', 'Total number of task retries')
+TASKS_DURATION = Histogram('celery_tasks_duration_seconds', 'Duration of task execution')
+TASKS_ACTIVE = Gauge('celery_tasks_active', 'Number of active tasks')
+WORKERS_ACTIVE = Gauge('celery_workers_active', 'Number of active workers')
+
+TASKS_PENDING = Gauge('celery_tasks_pending', 'Number of tasks pending')
+TASKS_STARTED = Gauge('celery_tasks_started', 'Number of tasks started')
+TASKS_SUCCEEDED = Gauge('celery_tasks_succeeded', 'Number of tasks succeeded')
+TASK_LATENCY = Summary('celery_task_latency_seconds', 'Time taken for a task to start after being sent')
+
+WORKER_MEMORY_USAGE = Gauge('celery_worker_memory_usage_bytes', 'Memory usage of workers')
+WORKER_CPU_USAGE = Gauge('celery_worker_cpu_usage_percent', 'CPU usage of workers')
+
+# Signal handlers to update Prometheus metrics
+@task_prerun.connect
+def task_sent(sender=None, task_id=None, task=None, args=None, kwargs=None, **kwds):
+    TASKS_SENT.inc()
+    TASKS_ACTIVE.inc()
+
+@task_received.connect
+def task_received_handler(sender=None, **kwargs):
+    TASKS_PENDING.inc()
+
+@task_started.connect
+def task_started_handler(sender=None, **kwargs):
+    TASKS_PENDING.dec()
+    TASKS_STARTED.inc()
+    TASK_LATENCY.observe(time.time() - kwargs['request'].time_start)
+
+@task_succeeded.connect
+def task_succeeded_handler(sender=None, **kwargs):
+    TASKS_SUCCEEDED.inc()
+    TASKS_STARTED.dec()
+
+@task_postrun.connect
+def task_completed(sender=None, task_id=None, task=None, args=None, kwargs=None, **kwds):
+    TASKS_COMPLETED.inc()
+    TASKS_DURATION.observe(sender.request.duration)
+    TASKS_ACTIVE.dec()
+
+@task_failure.connect
+def task_failed(sender=None, task_id=None, exception=None, args=None, kwargs=None, **kwds):
+    TASKS_FAILED.inc()
+    TASKS_ACTIVE.dec()
+
+@task_retry.connect
+def task_retried(sender=None, request=None, reason=None, einfo=None, **kwargs):
+    TASKS_RETRIED.inc()
+
+@worker_ready.connect
+def worker_started(sender=None, **kwargs):
+    WORKERS_ACTIVE.inc()
+
+@worker_shutdown.connect
+def worker_stopped(sender=None, **kwargs):
+    WORKERS_ACTIVE.dec()
+
+def monitor_worker_resources():
+    process = psutil.Process()
+    while True:
+        WORKER_MEMORY_USAGE.set(process.memory_info().rss)
+        WORKER_CPU_USAGE.set(process.cpu_percent(interval=1))
+        time.sleep(10)  # Adjust the interval as needed
+
+if __name__ == "__main__":
+    # Start the Prometheus HTTP server to expose metrics
+    start_http_server(8000)  # Metrics available at http://localhost:8000
+
+    # Start monitoring worker resources
+    resource_monitor_thread = Thread(target=monitor_worker_resources, daemon=True)
+    resource_monitor_thread.start()
+
+    # Keep the main thread alive to allow the HTTP server to run
+    while True:
+        time.sleep(1)
