@@ -1,0 +1,128 @@
+[python]
+
+Sure, let's break down each of the metrics defined in the script and explain their purposes:
+
+### Task Metrics
+
+1. **TASKS_SENT**:
+   ```python
+   TASKS_SENT = Counter('celery_tasks_sent_total', 'Total number of tasks sent')
+   ```
+   - **Type**: Counter
+   - **Description**: Tracks the total number of tasks that have been sent to the Celery queue. This metric increments every time a task is sent.
+
+2. **TASKS_COMPLETED**:
+   ```python
+   TASKS_COMPLETED = Counter('celery_tasks_completed_total', 'Total number of tasks completed')
+   ```
+   - **Type**: Counter
+   - **Description**: Tracks the total number of tasks that have been completed successfully. This metric increments every time a task finishes execution.
+
+3. **TASKS_FAILED**:
+   ```python
+   TASKS_FAILED = Counter('celery_tasks_failed_total', 'Total number of tasks failed')
+   ```
+   - **Type**: Counter
+   - **Description**: Tracks the total number of tasks that have failed. This metric increments every time a task fails.
+
+4. **TASKS_RETRIED**:
+   ```python
+   TASKS_RETRIED = Counter('celery_tasks_retried_total', 'Total number of task retries')
+   ```
+   - **Type**: Counter
+   - **Description**: Tracks the total number of task retries. This metric increments every time a task is retried due to failure.
+
+5. **TASKS_DURATION**:
+   ```python
+   TASKS_DURATION = Histogram('celery_tasks_duration_seconds', 'Duration of task execution')
+   ```
+   - **Type**: Histogram
+   - **Description**: Measures the duration of task execution in seconds. This metric observes the time taken for each task to complete.
+
+6. **TASKS_ACTIVE**:
+   ```python
+   TASKS_ACTIVE = Gauge('celery_tasks_active', 'Number of active tasks')
+   ```
+   - **Type**: Gauge
+   - **Description**: Tracks the number of currently active (running) tasks. This metric increments when a task starts and decrements when a task finishes or fails.
+
+7. **TASKS_PENDING**:
+   ```python
+   TASKS_PENDING = Gauge('celery_tasks_pending', 'Number of tasks pending')
+   ```
+   - **Type**: Gauge
+   - **Description**: Tracks the number of tasks that are pending execution. This metric increments when a task is received and decrements when a task starts.
+
+8. **TASKS_STARTED**:
+   ```python
+   TASKS_STARTED = Gauge('celery_tasks_started', 'Number of tasks started')
+   ```
+   - **Type**: Gauge
+   - **Description**: Tracks the number of tasks that have started execution. This metric increments when a task starts and decrements when a task finishes.
+
+9. **TASKS_SUCCEEDED**:
+   ```python
+   TASKS_SUCCEEDED = Gauge('celery_tasks_succeeded', 'Number of tasks succeeded')
+   ```
+   - **Type**: Gauge
+   - **Description**: Tracks the number of tasks that have succeeded. This metric increments when a task finishes successfully.
+
+10. **TASK_LATENCY**:
+    ```python
+    TASK_LATENCY = Summary('celery_task_latency_seconds', 'Time taken for a task to start after being sent')
+    ```
+    - **Type**: Summary
+    - **Description**: Measures the latency (in seconds) for a task to start after being sent. This metric observes the time difference between when a task is received and when it starts execution.
+
+### Worker Metrics
+
+1. **WORKERS_ACTIVE**:
+   ```python
+   WORKERS_ACTIVE = Gauge('celery_workers_active', 'Number of active workers')
+   ```
+   - **Type**: Gauge
+   - **Description**: Tracks the number of currently active workers. This metric increments when a worker starts and decrements when a worker stops.
+
+2. **WORKER_MEMORY_USAGE**:
+   ```python
+   WORKER_MEMORY_USAGE = Gauge('celery_worker_memory_usage_bytes', 'Memory usage of workers')
+   ```
+   - **Type**: Gauge
+   - **Description**: Tracks the memory usage (in bytes) of the worker process. This metric is updated periodically.
+
+3. **WORKER_CPU_USAGE**:
+   ```python
+   WORKER_CPU_USAGE = Gauge('celery_worker_cpu_usage_percent', 'CPU usage of workers')
+   ```
+   - **Type**: Gauge
+   - **Description**: Tracks the CPU usage (as a percentage) of the worker process. This metric is updated periodically.
+
+### Signal Handlers
+
+- **task_prerun**:
+  - Increments `TASKS_SENT` and `TASKS_ACTIVE` when a task is about to run.
+- **task_received**:
+  - Increments `TASKS_PENDING` when a task is received by the worker.
+- **task_started**:
+  - Increments `TASKS_STARTED`, decrements `TASKS_PENDING`, and observes `TASK_LATENCY` when a task starts.
+- **task_succeeded**:
+  - Increments `TASKS_SUCCEEDED` and decrements `TASKS_STARTED` when a task completes successfully.
+- **task_postrun**:
+  - Increments `TASKS_COMPLETED`, observes `TASKS_DURATION`, and decrements `TASKS_ACTIVE` when a task finishes.
+- **task_failure**:
+  - Increments `TASKS_FAILED` and decrements `TASKS_ACTIVE` when a task fails.
+- **task_retry**:
+  - Increments `TASKS_RETRIED` when a task is retried.
+- **worker_ready**:
+  - Increments `WORKERS_ACTIVE` when a worker starts.
+- **worker_shutdown**:
+  - Decrements `WORKERS_ACTIVE` when a worker stops.
+
+### Resource Monitoring
+
+- **monitor_worker_resources**:
+  - Periodically updates `WORKER_MEMORY_USAGE` and `WORKER_CPU_USAGE` by checking the worker process's memory and CPU usage. This function runs in a separate thread to avoid blocking the main program.
+
+### Summary
+
+These metrics provide comprehensive monitoring of Celery's task lifecycle, from the moment tasks are sent to the queue until they are completed, retried, or failed. Additionally, worker metrics help track the health and performance of the workers handling these tasks. This setup allows you to gain valuable insights into the operational state and performance of your Celery-based system.
