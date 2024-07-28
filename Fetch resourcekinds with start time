@@ -1,0 +1,136 @@
+import requests
+import logging
+import time
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Define vROps API endpoint and credentials
+vrops_url = 'https://your_vrops_instance'
+username = 'your_username'
+password = 'your_password'
+auth_source = 'your_auth_source'
+
+# Function to authenticate and get a token
+def get_auth_token(vrops_url, username, password, auth_source):
+    url = f'{vrops_url}/suite-api/api/auth/token/acquire'
+    payload = {
+        'username': username,
+        'password': password,
+        'authSource': auth_source
+    }
+    headers = {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+    }
+
+    start_time = time.time()
+    response = requests.post(url, headers=headers, json=payload, verify=False)
+    response.raise_for_status()
+    end_time = time.time()
+
+    processing_time = end_time - start_time
+    logging.info(f'Auth request processing time: {processing_time:.2f} seconds')
+    
+    return response.json()['token']
+
+# Function to fetch data from vROps API
+def fetch_data_from_vrops(url, params, auth_token):
+    headers = {
+        'Accept': 'application/json',
+        'Authorization': f'vRealizeOpsToken {auth_token}'
+    }
+    
+    start_time = time.time()
+    try:
+        response = requests.get(url, headers=headers, verify=False, timeout=10, params=params)
+        response.raise_for_status()
+        end_time = time.time()
+
+        processing_time = end_time - start_time
+        logging.info(f'API request processing time: {processing_time:.2f} seconds')
+
+        return response.json()
+    except requests.exceptions.HTTPError as http_err:
+        logging.error(f'HTTP error occurred: {http_err}')
+    except requests.exceptions.ConnectionError as conn_err:
+        logging.error(f'Connection error occurred: {conn_err}')
+    except requests.exceptions.Timeout as timeout_err:
+        logging.error(f'Timeout error occurred: {timeout_err}')
+    except requests.exceptions.RequestException as req_err:
+        logging.error(f'Error occurred: {req_err}')
+    return None
+
+# Function to fetch virtual machine resource kind count
+def fetch_virtual_machine_resource_kind_count(vrops_url, auth_token):
+    resource_kind_key = 'VirtualMachine'
+    api_url = f'{vrops_url}/suite-api/api/resourcekinds'
+    params = {
+        'resourceKindKey': resource_kind_key,
+        'pageSize': 1,
+        'startIndex': 0
+    }
+    return fetch_data_from_vrops(api_url, params, auth_token)['pageInfo']['totalCount']
+
+# Function to fetch virtual machine resource kinds if count is more than 1000
+def fetch_virtual_machine_resource_kinds(vrops_url, auth_token, total_count):
+    resource_kind_key = 'VirtualMachine'
+    start_index = 0
+    page_size = 1000
+    vm_resource_kinds = []
+
+    while start_index < total_count:
+        api_url = f'{vrops_url}/suite-api/api/resourcekinds'
+        params = {
+            'resourceKindKey': resource_kind_key,
+            'pageSize': page_size,
+            'startIndex': start_index
+        }
+        data = fetch_data_from_vrops(api_url, params, auth_token)
+        
+        if data is None:
+            logging.error('Failed to fetch resource kind data, retrying...')
+            time.sleep(5)
+            continue
+
+        resource_kinds_page = data.get('resourceKind', [])
+        
+        vm_resource_kinds.extend(resource_kinds_page)
+        
+        start_index += page_size
+
+    return vm_resource_kinds
+
+# Main execution
+if __name__ == '__main__':
+    auth_start_time = time.time()
+    auth_token = get_auth_token(vrops_url, username, password, auth_source)
+    auth_end_time = time.time()
+
+    auth_processing_time = auth_end_time - auth_start_time
+    logging.info(f'Auth processing time: {auth_processing_time:.2f} seconds')
+
+    vm_count_start_time = time.time()
+    vm_count = fetch_virtual_machine_resource_kind_count(vrops_url, auth_token)
+    vm_count_end_time = time.time()
+
+    vm_count_processing_time = vm_count_end_time - vm_count_start_time
+    logging.info(f'VM count processing time: {vm_count_processing_time:.2f} seconds')
+
+    if vm_count is not None:
+        if vm_count <= 1000:
+            logging.info(f'Total virtual machines: {vm_count}')
+            print(f'Total virtual machines: {vm_count}')
+        else:
+            vm_kinds_start_time = time.time()
+            vm_resource_kinds = fetch_virtual_machine_resource_kinds(vrops_url, auth_token, vm_count)
+            vm_kinds_end_time = time.time()
+
+            vm_kinds_processing_time = vm_kinds_end_time - vm_kinds_start_time
+            logging.info(f'VM kinds processing time: {vm_kinds_processing_time:.2f} seconds')
+
+            vm_resource_kind_ids = [rk.get('resourceKindKey') for rk in vm_resource_kinds]
+            logging.info(f'Total virtual machines: {vm_count}')
+            logging.info(f'Virtual machine resource kind IDs: {vm_resource_kind_ids}')
+            print(f'Total virtual machines: {vm_count}')
+            print(f'Virtual machine resource kind IDs: {vm_resource_kind_ids}')
