@@ -1,5 +1,3 @@
-# resource_kinds.py
-
 import requests
 from requests.auth import HTTPBasicAuth
 import logging
@@ -13,10 +11,7 @@ vrops_url = 'https://your_vrops_instance'
 username = 'your_username'
 password = 'your_password'
 
-# Initialize pagination variables
-page_size = 1000  # Number of items per page
-
-# Function to fetch data from vROps API with pagination
+# Function to fetch data from vROps API
 def fetch_data_from_vrops(url, params, auth):
     try:
         response = requests.get(url, auth=auth, verify=False, timeout=10, params=params)
@@ -32,32 +27,48 @@ def fetch_data_from_vrops(url, params, auth):
         logging.error(f'Error occurred: {req_err}')
     return None
 
-# Method to fetch all resource kinds
-def fetch_all_resource_kinds(vrops_url, username, password):
-    resource_kinds = []
+# Function to fetch virtual machine resource kind
+def fetch_virtual_machine_resource_kind(vrops_url, username, password):
+    resource_kind_key = 'VirtualMachine'
     start_index = 0
+    page_size = 1000
+    vm_resource_kinds = []
+
     while True:
         api_url = f'{vrops_url}/suite-api/api/resourcekinds'
-        params = {'start': start_index, 'limit': page_size}
+        params = {
+            'resourceKindKey': resource_kind_key,
+            'pageSize': page_size,
+            'startIndex': start_index
+        }
         data = fetch_data_from_vrops(api_url, params, HTTPBasicAuth(username, password))
         
         if data is None:
-            logging.error('Failed to fetch resource kinds, retrying...')
+            logging.error('Failed to fetch resource kind data, retrying...')
             time.sleep(5)
             continue
-        
+
         resource_kinds_page = data.get('resourceKind', [])
         
         if not resource_kinds_page:
-            logging.info('No more resource kinds to fetch.')
+            logging.info('No more virtual machine resource kinds to fetch.')
             break
-        
-        resource_kinds.extend(resource_kinds_page)
-        
+
+        vm_resource_kinds.extend(resource_kinds_page)
+
         if len(resource_kinds_page) < page_size:
             break
-        
+
         start_index += page_size
-    
-    logging.info(f'Total resource kinds retrieved: {len(resource_kinds)}')
-    return resource_kinds
+
+    logging.info(f'Total virtual machine resource kinds retrieved: {len(vm_resource_kinds)}')
+    return vm_resource_kinds
+
+# Main execution
+if __name__ == '__main__':
+    vm_resource_kinds = fetch_virtual_machine_resource_kind(vrops_url, username, password)
+    vm_count = sum(rk.get('resourceCount', 0) for rk in vm_resource_kinds)
+    vm_resource_kind_ids = [rk.get('resourceKindKey') for rk in vm_resource_kinds]
+
+    print(f'Total virtual machines: {vm_count}')
+    print(f'Virtual machine resource kind IDs: {vm_resource_kind_ids}')
