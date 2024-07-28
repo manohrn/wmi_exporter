@@ -9,13 +9,15 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 vrops_url = 'https://your_vrops_instance'
 username = 'your_username'
 password = 'your_password'
+auth_source = 'your_auth_source'
 
 # Function to authenticate and get a token
-def get_auth_token(vrops_url, username, password):
+def get_auth_token(vrops_url, username, password, auth_source):
     url = f'{vrops_url}/suite-api/api/auth/token/acquire'
     payload = {
         'username': username,
-        'password': password
+        'password': password,
+        'authSource': auth_source
     }
     headers = {
         'Accept': 'application/json',
@@ -46,14 +48,32 @@ def fetch_data_from_vrops(url, params, auth_token):
         logging.error(f'Error occurred: {req_err}')
     return None
 
-# Function to fetch virtual machine resource kind
-def fetch_virtual_machine_resource_kind(vrops_url, auth_token):
+# Function to fetch virtual machine resource kind count
+def fetch_virtual_machine_resource_kind_count(vrops_url, auth_token):
+    resource_kind_key = 'VirtualMachine'
+    api_url = f'{vrops_url}/suite-api/api/resourcekinds'
+    params = {
+        'resourceKindKey': resource_kind_key,
+        'pageSize': 1,
+        'startIndex': 0
+    }
+    data = fetch_data_from_vrops(api_url, params, auth_token)
+    
+    if data is None:
+        logging.error('Failed to fetch resource kind data.')
+        return None
+
+    total_count = data['pageInfo']['totalCount']
+    return total_count
+
+# Function to fetch virtual machine resource kinds if count is more than 1000
+def fetch_virtual_machine_resource_kinds(vrops_url, auth_token, total_count):
     resource_kind_key = 'VirtualMachine'
     start_index = 0
     page_size = 1000
     vm_resource_kinds = []
 
-    while True:
+    while start_index < total_count:
         api_url = f'{vrops_url}/suite-api/api/resourcekinds'
         params = {
             'resourceKindKey': resource_kind_key,
@@ -69,26 +89,25 @@ def fetch_virtual_machine_resource_kind(vrops_url, auth_token):
 
         resource_kinds_page = data.get('resourceKind', [])
         
-        if not resource_kinds_page:
-            logging.info('No more virtual machine resource kinds to fetch.')
-            break
-
         vm_resource_kinds.extend(resource_kinds_page)
-
-        if len(resource_kinds_page) < page_size:
-            break
-
+        
         start_index += page_size
 
-    logging.info(f'Total virtual machine resource kinds retrieved: {len(vm_resource_kinds)}')
     return vm_resource_kinds
 
 # Main execution
 if __name__ == '__main__':
-    auth_token = get_auth_token(vrops_url, username, password)
-    vm_resource_kinds = fetch_virtual_machine_resource_kind(vrops_url, auth_token)
-    vm_count = sum(rk.get('resourceCount', 0) for rk in vm_resource_kinds)
-    vm_resource_kind_ids = [rk.get('resourceKindKey') for rk in vm_resource_kinds]
+    auth_token = get_auth_token(vrops_url, username, password, auth_source)
+    vm_count = fetch_virtual_machine_resource_kind_count(vrops_url, auth_token)
 
-    print(f'Total virtual machines: {vm_count}')
-    print(f'Virtual machine resource kind IDs: {vm_resource_kind_ids}')
+    if vm_count is not None:
+        if vm_count <= 1000:
+            logging.info(f'Total virtual machines: {vm_count}')
+            print(f'Total virtual machines: {vm_count}')
+        else:
+            vm_resource_kinds = fetch_virtual_machine_resource_kinds(vrops_url, auth_token, vm_count)
+            vm_resource_kind_ids = [rk.get('resourceKindKey') for rk in vm_resource_kinds]
+            logging.info(f'Total virtual machines: {vm_count}')
+            logging.info(f'Virtual machine resource kind IDs: {vm_resource_kind_ids}')
+            print(f'Total virtual machines: {vm_count}')
+            print(f'Virtual machine resource kind IDs: {vm_resource_kind_ids}')
