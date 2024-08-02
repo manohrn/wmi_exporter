@@ -1,0 +1,21 @@
+# Path to the Python script
+$pythonScriptPath = "C:\\path\\to\\your_script.py"
+
+# Timeout in seconds (e.g., 240 seconds = 4 minutes)
+$timeout = 240
+
+# Start the Python script as a background process
+$process = Start-Process -FilePath "python" -ArgumentList $pythonScriptPath -NoNewWindow -PassThru
+
+# Wait for the specified timeout period
+Start-Sleep -Seconds $timeout
+
+# Check if the process is still running after the timeout
+if (!$process.HasExited) {
+    # If the process is still running, kill the process
+    $process | Stop-Process
+    Write-Output "$(Get-Date): Script timed out and was terminated." >> "C:\\path\\to\\logs\\your_script.log"
+} else {
+    # If the process completed successfully, log the completion
+    Write-Output "$(Get-Date): Script completed successfully." >> "C:\\path\\to\\logs\\your_script.log"
+}
