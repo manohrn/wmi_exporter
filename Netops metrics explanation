@@ -1,0 +1,92 @@
+To use basic authentication with your Kafka consumer, you need to configure the KafkaConsumer to use the appropriate SASL mechanism (e.g., PLAIN) along with the required credentials. Below is a script that demonstrates how to set up basic authentication with a Kafka topic, convert the messages into Prometheus metrics, and expose them via an API endpoint using Flask.
+
+Prerequisites
+
+Ensure you have the necessary Python libraries installed:
+
+pip install kafka-python prometheus_client flask
+
+Script with Basic Authentication
+
+	1.	Python script with basic authentication:
+
+from kafka import KafkaConsumer
+from prometheus_client import start_http_server, Counter, Gauge, generate_latest
+from flask import Flask, Response
+import threading
+import json
+
+# Kafka settings
+KAFKA_BROKER = 'your.kafka.broker:9093'  # Change this to your Kafka broker
+KAFKA_TOPIC = 'net_ops_metrics'  # Change this to your Kafka topic
+SASL_MECHANISM = 'PLAIN'  # Use 'PLAIN' for basic authentication
+SECURITY_PROTOCOL = 'SASL_PLAINTEXT'  # Use 'SASL_PLAINTEXT' for non-SSL connection
+SASL_USERNAME = 'your_username'  # Change this to your Kafka username
+SASL_PASSWORD = 'your_password'  # Change this to your Kafka password
+
+# Prometheus settings
+PROMETHEUS_PORT = 8000
+
+# Flask app
+app = Flask(__name__)
+
+# Prometheus metrics
+message_counter = Counter('kafka_messages_total', 'Total number of Kafka messages', ['topic'])
+net_ops_metric_gauge = Gauge('net_ops_metric', 'Net Ops Metric', ['metric_name'])
+
+# Function to consume Kafka messages and update Prometheus metrics
+def consume_messages():
+    consumer = KafkaConsumer(
+        KAFKA_TOPIC,
+        bootstrap_servers=KAFKA_BROKER,
+        auto_offset_reset='earliest',
+        enable_auto_commit=True,
+        group_id='net_ops_group',
+        value_deserializer=lambda x: json.loads(x.decode('utf-8')),
+        security_protocol=SECURITY_PROTOCOL,
+        sasl_mechanism=SASL_MECHANISM,
+        sasl_plain_username=SASL_USERNAME,
+        sasl_plain_password=SASL_PASSWORD
+    )
+    
+    for message in consumer:
+        message_counter.labels(topic=KAFKA_TOPIC).inc()
+        metric_data = message.value
+        metric_name = metric_data.get('metric_name')
+        metric_value = metric_data.get('value')
+        if metric_name and isinstance(metric_value, (int, float)):
+            net_ops_metric_gauge.labels(metric_name=metric_name).set(metric_value)
+
+# Flask route to expose metrics
+@app.route('/metrics')
+def metrics():
+    return Response(generate_latest(), mimetype='text/plain')
+
+# Start Kafka consumer in a separate thread
+consumer_thread = threading.Thread(target=consume_messages)
+consumer_thread.daemon = True
+consumer_thread.start()
+
+# Start Flask app
+if __name__ == '__main__':
+    start_http_server(PROMETHEUS_PORT)
+    app.run(host='0.0.0.0', port=PROMETHEUS_PORT)
+
+
+
+Explanation:
+
+	1.	Kafka Consumer Settings with Basic Authentication:
+	•	security_protocol='SASL_PLAINTEXT': Specifies the use of SASL over plaintext (non-SSL) communication. Use SASL_SSL if SSL is required.
+	•	sasl_mechanism='PLAIN': Specifies the use of the PLAIN SASL mechanism for basic authentication.
+	•	sasl_plain_username and sasl_plain_password: Provide the username and password for authentication.
+	2.	Kafka Broker Configuration: Ensure your Kafka broker is configured to support SASL/PLAIN authentication.
+
+Running the Script:
+
+	1.	Ensure your Kafka broker is running and accessible with the specified authentication settings.
+	2.	Ensure your Kafka topic exists and contains messages in the expected JSON format.
+	3.	Run the script: python your_script_name.py
+	4.	Access the Prometheus metrics at http://localhost:8000/metrics
+
+This script configures the Kafka consumer to use basic authentication (SASL/PLAIN) for accessing the Kafka topic securely. Adjust the script to match your specific authentication and security requirements.
