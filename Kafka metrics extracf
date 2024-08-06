@@ -1,0 +1,58 @@
+from kafka import KafkaConsumer
+from prometheus_client import start_http_server, Gauge
+import json
+
+# Define the list of bootstrap servers
+bootstrap_servers = ["server1:9092", "server2:9092", "server3:9092"]
+
+# Define the topic you want to consume from
+topic_name = 'your_topic_name'
+
+# Create a Kafka consumer
+consumer = KafkaConsumer(
+    topic_name,
+    bootstrap_servers=bootstrap_servers,
+    auto_offset_reset='earliest',  # Start reading at the earliest available message
+    enable_auto_commit=True
+)
+
+# Start the Prometheus metrics server
+start_http_server(8000)
+
+# Dictionary to hold dynamic gauges
+gauges = {}
+
+def get_or_create_gauge(name, description):
+    if name not in gauges:
+        gauges[name] = Gauge(name, description)
+    return gauges[name]
+
+# Function to process messages based on specified fields
+def process_message(message, fields):
+    try:
+        data = json.loads(message.value.decode('utf-8'))
+        for field in fields:
+            if field in data:
+                value = data[field]
+                if isinstance(value, (int, float)):
+                    gauge = get_or_create_gauge(field, f'Gauge for {field}')
+                    gauge.set(value)
+                else:
+                    print(f"Non-numeric value for field {field}: {value}")
+            else:
+                print(f"Field {field} not found in message: {message.value.decode('utf-8')}")
+    except (ValueError, json.JSONDecodeError):
+        print(f"Invalid message format: {message.value.decode('utf-8')}")
+
+# Specify the fields you want to extract and convert to metrics
+fields_to_extract = ['metric', 'availability']
+
+# Read messages from the topic
+try:
+    for message in consumer:
+        process_message(message, fields_to_extract)
+except KeyboardInterrupt:
+    print("Stopped by user")
+finally:
+    # Close the consumer connection
+    consumer.close()
