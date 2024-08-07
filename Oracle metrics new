@@ -1,0 +1,48 @@
+import oracledb
+from prometheus_client import start_http_server, Gauge
+import time
+
+# Database connection parameters
+DB_USER = 'your_username'
+DB_PASSWORD = 'your_password'
+DB_DSN_LIST = [
+    'hostname1:port1/service_name1',
+    'hostname2:port2/service_name2'
+]
+
+# Prometheus Gauge with predefined labels
+oracle_metric = Gauge('oracle_metric', 'Description of the Oracle metric', ['label1', 'label2'])
+
+def fetch_data_from_oracle(user, password, dsn):
+    connection = None
+    try:
+        connection = oracledb.connect(user=user, password=password, dsn=dsn)
+        cursor = connection.cursor()
+        cursor.execute("SELECT METRIC_VALUE_COLUMN, LABEL1_COLUMN, LABEL2_COLUMN FROM YOUR_TABLE WHERE METRIC_NAME_COLUMN = 'your_metric_name'")
+        result = cursor.fetchone()
+        
+        if result:
+            metric_value = result[0]
+            label1_value = result[1]  # Get label1 value from query result
+            label2_value = result[2]  # Get label2 value from query result
+            oracle_metric.labels(label1=label1_value, label2=label2_value).set(metric_value)
+    
+    except oracledb.DatabaseError as e:
+        print(f"Database error occurred: {e}")
+    finally:
+        if connection:
+            connection.close()
+
+def main():
+    # Start up the server to expose the metrics.
+    start_http_server(8000)
+    print("Prometheus metrics server started on port 8000")
+    
+    # Fetch data and update metrics every 15 seconds
+    while True:
+        for dsn in DB_DSN_LIST:
+            fetch_data_from_oracle(DB_USER, DB_PASSWORD, dsn)
+        time.sleep(15)
+
+if __name__ == "__main__":
+    main()
