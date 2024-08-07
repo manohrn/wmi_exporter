@@ -1,0 +1,72 @@
+from prometheus_client import start_http_server, Gauge
+import oracledb
+import logging
+import os
+import time
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Set up environment
+oh = "C:/temp/mano/oracle/oracle"
+os.environ["ORACLE_HOME"] = oh
+os.environ["PATH"] = oh + os.pathsep + os.environ["PATH"]
+
+# Database connection details (should be securely managed in production)
+user = os.getenv('ORACLE_USER', 'default_user')
+password = os.getenv('ORACLE_PASSWORD', 'default_password')
+host = os.getenv('ORACLE_HOST', 'your_host')
+port = os.getenv('ORACLE_PORT', 'default_port')
+service_name = os.getenv('ORACLE_SERVICE_NAME', 'default_service')
+
+dsn = oracledb.makedsn(host=host, port=port, service_name=service_name)
+
+# Prometheus metrics
+oracle_metrics_gauge = Gauge('oracle_metrics', 'Metrics from Oracle Database', ['target_name', 'target_type', 'availability_status'])
+additional_metric_gauge = Gauge('oracle_additional_metrics', 'Additional Metrics from Oracle Database', ['metric_name', 'metric_value'])
+
+# SQL queries
+queries = {
+    "availability": """
+    SELECT target_name, target_type, availability_status
+    FROM SYSMAN.MGMT$AVAILABILITY_CURRENT
+    WHERE target_type IN ('rac_database', 'oracle_database', 'oracle_pdb')
+      AND LOWER(target_name) NOT LIKE '%root%'
+    ORDER BY 1
+    """,
+    "additional_metrics": """
+    SELECT metric_name, metric_value
+    FROM SOME_OTHER_TABLE
+    """
+}
+
+def fetch_and_update_metrics():
+    try:
+        connection = oracledb.connect(user=user, password=password, dsn=dsn)
+        for query_name, sql in queries.items():
+            with connection.cursor() as cursor:
+                cursor.arraysize = 5000
+                cursor.execute(sql)
+                results = cursor.fetchall()
+                if query_name == "availability":
+                    for row in results:
+                        target_name, target_type, availability_status = row
+                        oracle_metrics_gauge.labels(target_name, target_type, availability_status).set(1)
+                elif query_name == "additional_metrics":
+                    for row in results:
+                        metric_name, metric_value = row
+                        additional_metric_gauge.labels(metric_name, metric_value).set(1)
+        connection.close()
+    except Exception as e:
+        logger.error(f"Error fetching metrics: {e}")
+
+if __name__ == '__main__':
+    # Start up the server to expose the metrics.
+    start_http_server(8000)
+    logger.info("Prometheus metrics server started at http://localhost:8000")
+
+    # Fetch and expose metrics in an infinite loop
+    while True:
+        fetch_and_update_metrics()
+        time.sleep(60)  # Fetch metrics every 60 seconds
