@@ -1,0 +1,64 @@
+from kafka import KafkaConsumer
+from prometheus_client import start_http_server, Counter, Gauge
+import json
+
+# Replace with your Kafka server and topic
+bootstrap_servers = ['localhost:9092']
+topic_name = 'net_ops_metrics'
+
+# Define Prometheus metrics
+metrics = {
+    'bytes_in': Counter('net_bytes_in_total', 'Total number of bytes received'),
+    'bytes_out': Counter('net_bytes_out_total', 'Total number of bytes sent'),
+    'packets_in': Counter('net_packets_in_total', 'Total number of packets received'),
+    'packets_out': Counter('net_packets_out_total', 'Total number of packets sent'),
+    'errors_in': Counter('net_errors_in_total', 'Total number of errors received'),
+    'errors_out': Counter('net_errors_out_total', 'Total number of errors sent'),
+    'dropped_in': Counter('net_dropped_in_total', 'Total number of packets dropped on receive'),
+    'dropped_out': Counter('net_dropped_out_total', 'Total number of packets dropped on send'),
+    'availability': Gauge('net_availability', 'Availability of the network component')
+}
+
+# Start Prometheus HTTP server
+start_http_server(8000)
+
+# Create a Kafka consumer
+consumer = KafkaConsumer(
+    topic_name,
+    bootstrap_servers=bootstrap_servers,
+    auto_offset_reset='earliest',  # Start reading from the earliest message
+    enable_auto_commit=True,
+    group_id='net_ops_consumer'  # Replace with your consumer group ID
+)
+
+# Read messages from the topic and convert to Prometheus metrics
+for message in consumer:
+    try:
+        # Parse message as JSON
+        data = json.loads(message.value.decode('utf-8'))
+        
+        # Extract required fields
+        component_name = data.get('componentName')
+        device_name = data.get('deviceName')
+        device_ip = data.get('deviceIPAddress')
+        metrics_data = data.get('metrics')
+        availability = metrics_data.get('Availability') if metrics_data else None
+
+        # Log extracted information
+        print(f"Component Name: {component_name}")
+        print(f"Device Name: {device_name}")
+        print(f"Device IP Address: {device_ip}")
+        print(f"Availability: {availability}")
+
+        # Update Prometheus metrics
+        if metrics_data:
+            for metric_name, metric_value in metrics_data.items():
+                if metric_name in metrics and isinstance(metric_value, (int, float)):
+                    metrics[metric_name].set(metric_value)
+                else:
+                    print(f"Unrecognized metric or invalid value: {metric_name} - {metric_value}")
+
+    except json.JSONDecodeError as e:
+        print(f"Error decoding JSON: {e}")
+    except Exception as e:
+        print(f"Error processing message: {e}")
