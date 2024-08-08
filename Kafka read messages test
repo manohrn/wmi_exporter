@@ -1,0 +1,48 @@
+import json
+from kafka import KafkaConsumer
+from prometheus_client import start_http_server, Counter
+import time
+
+# Define Prometheus metrics
+device_name_counter = Counter('device_name_counter', 'Count of device names', ['device_name'])
+
+def extract_device_name(message_value):
+    try:
+        message_json = json.loads(message_value)
+        device_name = message_json.get('device_name')
+        return device_name
+    except json.JSONDecodeError:
+        print("Error decoding JSON")
+        return None
+
+def consume_messages(broker, group, topics):
+    consumer = KafkaConsumer(
+        *topics,
+        bootstrap_servers=broker,
+        group_id=group,
+        auto_offset_reset='earliest',
+        value_deserializer=lambda x: x.decode('utf-8')
+    )
+
+    try:
+        for msg in consumer:
+            device_name = extract_device_name(msg.value)
+            if device_name == 'Mano':
+                print(f'Message: {msg.value}')
+                device_name_counter.labels(device_name=device_name).inc()
+
+    except KeyboardInterrupt:
+        pass
+    finally:
+        consumer.close()
+
+if __name__ == "__main__":
+    broker = 'localhost:9092'
+    group = 'my_consumer_group'
+    topics = ['my_topic']
+    
+    # Start the Prometheus metrics server
+    start_http_server(8000)
+    
+    # Consume messages from Kafka and process them
+    consume_messages(broker, group, topics)
