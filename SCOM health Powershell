@@ -1,0 +1,75 @@
+# Import the SCOM module
+Import-Module OperationsManager
+
+# Define a function to connect to a SCOM Management Group and retrieve health status
+function Get-SCOMHealthStatus {
+    param (
+        [string]$ManagementGroupName
+    )
+
+    # Connect to the SCOM Management Group
+    $managementServer = Get-SCOMManagementServer -ComputerName $ManagementGroupName
+    Set-SCOMManagementServerConnection -ManagementServer $managementServer
+
+    # Get the health states of all monitored objects
+    $healthStatuses = Get-SCOMMonitoringObject | Select-Object DisplayName, HealthState
+
+    # Return the health statuses
+    return $healthStatuses
+}
+
+# Define a function to convert health statuses to Prometheus metrics format
+function Convert-ToPrometheusMetrics {
+    param (
+        [array]$HealthStatuses
+    )
+
+    $metrics = @()
+
+    foreach ($status in $HealthStatuses) {
+        $metric = @"
+# TYPE scom_health_state gauge
+scom_health_state{name="$($status.DisplayName)"} $($status.HealthState)
+"@
+        $metrics += $metric
+    }
+
+    return $metrics -join "`n"
+}
+
+# Define a function to expose the metrics via an API endpoint
+function Start-MetricsEndpoint {
+    param (
+        [int]$Port = 9090,
+        [string]$MetricsData
+    )
+
+    # Use the .NET HttpListener class to create a simple web server
+    $listener = [System.Net.HttpListener]::new()
+    $listener.Prefixes.Add("http://*:$Port/metrics/")
+    $listener.Start()
+    Write-Host "Metrics endpoint started at http://localhost:$Port/metrics/"
+
+    while ($listener.IsListening) {
+        $context = $listener.GetContext()
+        $response = $context.Response
+        $buffer = [System.Text.Encoding]::UTF8.GetBytes($MetricsData)
+        $response.ContentLength64 = $buffer.Length
+        $response.OutputStream.Write($buffer, 0, $buffer.Length)
+        $response.OutputStream.Close()
+    }
+
+    $listener.Stop()
+}
+
+# Specify the Management Group name
+$managementGroup = "YourManagementGroupName"
+
+# Get health statuses from the specified Management Group
+$healthStatuses = Get-SCOMHealthStatus -ManagementGroupName $managementGroup
+
+# Convert health statuses to Prometheus metrics format
+$prometheusMetrics = Convert-ToPrometheusMetrics -HealthStatuses $healthStatuses
+
+# Start the API endpoint to expose the metrics
+Start-MetricsEndpoint -MetricsData $prometheusMetrics
