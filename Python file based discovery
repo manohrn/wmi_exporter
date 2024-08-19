@@ -1,0 +1,36 @@
+import json
+import pyodbc  # This is the library used to connect to MSSQL
+
+# Connect to the MSSQL database
+conn = pyodbc.connect(
+    'DRIVER={ODBC Driver 17 for SQL Server};'
+    'SERVER=your_server_name_or_ip;'
+    'DATABASE=your_db_name;'
+    'UID=your_db_user;'
+    'PWD=your_db_password'
+)
+
+cursor = conn.cursor()
+
+# Execute the query
+cursor.execute("SELECT ip_address, port, environment FROM inventory WHERE is_monitored = 1;")
+rows = cursor.fetchall()
+
+# Build the target list
+targets = []
+for row in rows:
+    ip_address, port, environment = row
+    targets.append({
+        "targets": [f"{ip_address}:{port}"],
+        "labels": {
+            "environment": environment
+        }
+    })
+
+# Write to a file in JSON format
+with open('/path/to/sd-config.json', 'w') as f:
+    json.dump(targets, f, indent=2)
+
+# Close the database connection
+cursor.close()
+conn.close()
