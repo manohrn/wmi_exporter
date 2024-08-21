@@ -1,0 +1,79 @@
+from kafka import KafkaConsumer
+from prometheus_client import start_http_server, Gauge
+import json
+import flask
+from flask import Flask, Response
+
+# Initialize Flask app
+app = Flask(__name__)
+
+# Define the list of bootstrap servers
+bootstrap_servers = ['your_bootstrap_server_here']
+
+# Define the topic you want to consume from
+topic_name = 'netopsmetric-export'
+
+# Create a Kafka consumer
+consumer = KafkaConsumer(
+    topic_name,
+    bootstrap_servers=bootstrap_servers,
+    auto_offset_reset='earliest',  # Start reading at the earliest available message
+    enable_auto_commit=True
+)
+
+# Define Prometheus metrics
+message_count = Gauge('kafka_messages_total', 'Total number of messages consumed from Kafka')
+message_value = Gauge('kafka_message_value', 'Value of the last message consumed from Kafka')
+bits_in = Gauge('bits_in', 'Bits in per second')
+bits_out = Gauge('bits_out', 'Bits out per second')
+
+# Function to process each message from Kafka
+def process_message(message):
+    # Process the message and update Prometheus metrics
+    message_count.inc()
+    metrics_data = ""
+    try:
+        value = json.loads(message.value.decode('utf-8'))
+
+        for value in value['metrics']:
+            if 'metricFamily' in value:
+                if value['metricFamily'] == 'NormalizedPortInfo':
+                    bits_in.set(value['metrics']['BitsIn'])
+                    bits_out.set(value['metrics']['BitsOut'])
+                    utilization_in = value['metrics']['UtilizationIn']
+                    utilization_out = value['metrics']['UtilizationOut']
+
+                    # Update the Prometheus metrics
+                    bits_in.set(bits_in)
+                    bits_out.set(bits_out)
+                    # Example: You can define more Prometheus metrics here as needed
+
+                    metrics_data = f"Metric Family: {value['metricFamily']}, Bits In: {bits_in}, Bits Out: {bits_out}, Utilization In: {utilization_in}, Utilization Out: {utilization_out}"
+
+    except json.JSONDecodeError as e:
+        print(f"JSON decode error: {e}")
+    except Exception as e:
+        print(f"Error processing message: {e}")
+
+    return metrics_data
+
+# Flask route to expose metrics
+@app.route('/metrics')
+def prometheus_metrics():
+    return Response(generate_latest(), mimetype='text/plain')
+
+# Start Prometheus metrics server
+start_http_server(8000)
+
+# Start processing messages from Kafka
+try:
+    for message in consumer:
+        process_message(message)
+except KeyboardInterrupt:
+    print("Stopped by user")
+finally:
+    # Close the consumer connection
+    consumer.close()
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=12345)
