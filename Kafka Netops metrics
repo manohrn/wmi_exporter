@@ -1,0 +1,61 @@
+from kafka import KafkaConsumer
+from prometheus_client import start_http_server, Gauge, generate_latest
+import json
+from flask import Flask, Response
+
+# Initialize Flask app
+app = Flask(__name__)
+
+# Define the list of bootstrap servers
+bootstrap_servers = ['your_bootstrap_server_here']
+
+# Define the topic you want to consume from
+topic_name = 'netopsmetric-export'
+
+# Create a Kafka consumer
+consumer = KafkaConsumer(
+    topic_name,
+    bootstrap_servers=bootstrap_servers,
+    auto_offset_reset='earliest',  # Start reading at the earliest available message
+    enable_auto_commit=True,
+    consumer_timeout_ms=1000  # Add timeout to avoid indefinite blocking
+)
+
+# Define Prometheus metrics
+message_count = Gauge('kafka_messages_total', 'Total number of messages consumed from Kafka')
+bits_in = Gauge('bits_in', 'Bits in per second')
+bits_out = Gauge('bits_out', 'Bits out per second')
+
+# Function to process a batch of messages
+def process_messages(messages):
+    for message in messages:
+        try:
+            data = json.loads(message.value.decode('utf-8'))
+            metrics = data.get('metrics', {})
+            if 'NormalizedPortInfo' in metrics.get('metricFamily', ''):
+                # Update Prometheus metrics
+                bits_in.set(metrics.get('BitsIn', 0))
+                bits_out.set(metrics.get('BitsOut', 0))
+                message_count.inc()
+
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            print(f"Error processing message: {e}")
+            continue  # Continue with the next message
+
+# Flask route to expose metrics
+@app.route('/metrics')
+def prometheus_metrics():
+    return Response(generate_latest(), mimetype='text/plain')
+
+# Start Prometheus metrics server
+start_http_server(8000)
+
+if __name__ == '__main__':
+    while True:
+        # Poll for messages in batches
+        batch = consumer.poll(timeout_ms=1000, max_records=10)
+        if batch:
+            process_messages([msg for msgs in batch.values() for msg in msgs])
+
+    # Run Flask app
+    app.run(host='0.0.0.0', port=12345)
