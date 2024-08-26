@@ -1,0 +1,76 @@
+from kafka import KafkaConsumer
+from prometheus_client import Gauge, generate_latest
+import json
+from flask import Flask, Response
+
+# Initialize Flask app
+app = Flask(__name__)
+
+# Define the list of bootstrap servers
+bootstrap_servers = ['your.kafka.server:9093']
+
+# SSL Configuration
+ssl_config = {
+    'security_protocol': 'SSL',
+    'ssl_cafile': '/path/to/ca-cert.pem',
+    'ssl_certfile': '/path/to/client-cert.pem',
+    'ssl_keyfile': '/path/to/client-key.pem'
+}
+
+# Define the topic you want to consume from
+topic_name = 'netopsmetric-export'
+
+# Create a Kafka consumer with SSL and consumer group
+consumer = KafkaConsumer(
+    topic_name,
+    bootstrap_servers=bootstrap_servers,
+    group_id='your-consumer-group',
+    auto_offset_reset='earliest',  # Start reading at the earliest available message
+    enable_auto_commit=True,
+    **ssl_config
+)
+
+# Define Prometheus metrics
+message_count = Gauge('kafka_messages_total', 'Total number of messages consumed from Kafka')
+AvgResponse = Gauge('AvgResponse_value', 'Bits per second')
+Reachability = Gauge('Reachability_value', 'Bits out per second')
+
+# Function to process each message from Kafka
+def process_message(message):
+    message_count.inc()
+
+    try:
+        value = json.loads(message.value.decode('utf-8'))
+
+        for metric in value['metrics']:
+            if 'metricFamily' in metric:
+                if metric['metricFamily'] == 'NormalizedReachabilityInfo':
+                    AvgResponse_value = metric['metrics'].get('AvgResponse', 0)
+                    Reachability_value = metric['metrics'].get('Reachability', 0)
+
+                    # Update the Prometheus metrics with real values
+                    AvgResponse.set(AvgResponse_value)
+                    Reachability.set(Reachability_value)
+
+    except json.JSONDecodeError as e:
+        print(f"JSON decode error: {e}")
+    except Exception as e:
+        print(f"Error processing message: {e}")
+
+# Flask route to expose metrics
+@app.route('/metrics')
+def prometheus_metrics():
+    return Response(generate_latest(), mimetype='text/plain')
+
+# Start processing messages from Kafka
+try:
+    for message in consumer:
+        process_message(message)
+except KeyboardInterrupt:
+    print("Stopped by user")
+finally:
+    # Close the consumer connection
+    consumer.close()
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=12345)
