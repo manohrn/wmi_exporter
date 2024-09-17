@@ -1,0 +1,77 @@
+from prometheus_client import start_http_server, Gauge
+import subprocess
+import time
+import json
+
+# Start Prometheus metrics server on port 9090
+start_http_server(9090)
+
+# Define a Prometheus gauge for the SCOM health state
+scom_health_state = Gauge('scom_health_state', 'Health state of SCOM objects', ['object_name', 'object_id', 'class'])
+
+def get_scom_metrics():
+    """
+    Function to get SCOM metrics via PowerShell and return them in JSON format.
+    Modify this function to suit your SCOM querying method.
+    """
+    ps_script = """
+    Import-Module OperationsManager
+    $ManagementServer = "server"
+    $ManagementGroup = "server2"
+
+    New-SCOMManagementGroupConnection -ComputerName $ManagementServer
+
+    $classes = Get-SCOMClass -Name "Microsoft.SystemCenter.ManagementGroup"
+    
+    $hashClasses = @{}
+    ForEach ($item in $classes) {
+        $hashClasses.Add($item.DisplayName, $item.Id.Guid)
+    }
+
+    $monitoredObjects = Get-SCOMMonitoringObject -Class $classes | Where-Object { $_.HealthState -ne "Uninitialized" }
+
+    $scomMetrics = @()
+    ForEach ($obj in $monitoredObjects) {
+        $metric = [PSCustomObject]@{
+            "DisplayName" = $obj.DisplayName
+            "Id"          = $obj.Id.Guid
+            "HealthState" = $obj.HealthState
+        }
+        $scomMetrics += $metric
+    }
+
+    $scomMetrics | ConvertTo-Json
+    """
+
+    # Run the PowerShell script
+    process = subprocess.Popen(["powershell", "-Command", ps_script], stdout=subprocess.PIPE)
+    result = process.communicate()[0]
+
+    # Convert the PowerShell output from JSON to a Python dictionary
+    return json.loads(result)
+
+def update_metrics():
+    """
+    Update the Prometheus metrics based on the SCOM health state.
+    """
+    scom_metrics = get_scom_metrics()
+    
+    for obj in scom_metrics:
+        object_name = obj["DisplayName"]
+        object_id = obj["Id"]
+        health_state = obj["HealthState"]
+
+        # Convert health state to 1 (Success) or 0 (Error/Warning)
+        if health_state == "Success":
+            value = 1
+        else:
+            value = 0
+
+        # Update the Prometheus gauge with the SCOM object data
+        scom_health_state.labels(object_name=object_name, object_id=object_id, class_="SCOM").set(value)
+
+if __name__ == "__main__":
+    # Continuously update metrics every 10 seconds
+    while True:
+        update_metrics()
+        time.sleep(10)
