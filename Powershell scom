@@ -1,0 +1,46 @@
+# Load necessary modules
+Import-Module OperationsManager
+Import-Module PrometheusNet  # Assuming you have Prometheus.Net installed
+
+# Define Prometheus metric collector
+$server = New-Object Prometheus.Client.MetricServer("localhost", 9090)
+$server.Start()
+
+# Connect to the SCOM management group
+$ManagementServer = "server"
+$ManagementGroup = "server2"
+
+New-SCOMManagementGroupConnection -ComputerName $ManagementServer
+
+# Get SCOM Management Group
+$classes = Get-SCOMClass -Name "Microsoft.SystemCenter.ManagementGroup"
+
+# Create an array containing SCOM infra class names (DisplayName,Name)
+$hashClasses = @{}
+ForEach ($item in $classes) {
+    $hashClasses.Add($item.DisplayName, $item.Id.Guid)
+}
+
+# Query the health state of finite set of SCOM infra objects
+$monitoredObjects = Get-SCOMMonitoringObject -Class $classes | Where-Object { $_.HealthState -ne "Uninitialized" }
+
+# Prepare Prometheus metrics output
+$scomMetrics = @{}
+ForEach ($obj in $monitoredObjects) {
+    $scomMetrics.Add($obj.DisplayName, @{
+        "id"     = $obj.Id.Guid
+        "status" = $obj.HealthState
+    })
+}
+
+# Expose the metrics for Prometheus
+$counter = New-Object Prometheus.Client.Gauge("scom_health_state", "Health state of SCOM objects", @("object_name", "object_id", "class"))
+
+foreach ($metric in $scomMetrics) {
+    $counter.WithLabels($metric.Key, $metric.Value.id, "SCOM").Set(($metric.Value.status -eq "Success") ? 1 : 0)
+}
+
+# Keep the script running to serve metrics
+while ($true) {
+    Start-Sleep -Seconds 10
+}
