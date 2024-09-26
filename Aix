@@ -1,0 +1,18 @@
+scrape_configs:
+  - job_name: 'aix_node_exporter'
+    static_configs:
+      - targets: ['<aix_node_exporter_host>:<port>']
+    relabel_configs:
+      - source_labels: [__name__, cpu]
+        regex: 'node_cpu_seconds_total;([0-7])'
+        replacement: 'physical_core_0'
+        target_label: 'physical_core'
+      - source_labels: [__name__, cpu]
+        regex: 'node_cpu_seconds_total;([8-15])'
+        replacement: 'physical_core_1'
+        target_label: 'physical_core'
+      - source_labels: [__name__, cpu]
+        regex: 'node_cpu_seconds_total;([16-23])'
+        replacement: 'physical_core_2'
+        target_label: 'physical_core'
+      # Continue this for all physical cores up to 128 logical cores
