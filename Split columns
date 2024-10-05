@@ -1,0 +1,17 @@
+import pandas as pd
+
+# Step 1: Read the CSV file
+df = pd.read_csv('input.csv')  # Replace 'input.csv' with the path to your CSV file
+
+# Step 2: Split both 'MonitorName' and 'Hostnames' columns by commas
+df['MonitorName'] = df['MonitorName'].str.split(',')
+df['Hostnames'] = df['Hostnames'].str.split(',')
+
+# Step 3: Explode both columns to get all combinations
+df = df.explode('MonitorName').explode('Hostnames')
+
+# Step 4: Optional - Write the output to a new CSV
+df.to_csv('output.csv', index=False)
+
+# Display the resulting DataFrame
+print(df)
