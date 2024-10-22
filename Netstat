@@ -1,0 +1,9 @@
+#!/bin/bash
+
+ss -tnp | grep ESTAB | awk '{print $7}' | cut -d"," -f1 | sort | uniq -c | while read count pid_prog; do
+    pid=$(echo $pid_prog | cut -d"/" -f1)
+    prog=$(echo $pid_prog | cut -d"/" -f2)
+    echo "# HELP process_tcp_connections Number of TCP connections per process"
+    echo "# TYPE process_tcp_connections gauge"
+    echo "process_tcp_connections{process=\"$prog\",pid=\"$pid\"} $count"
+done > /var/lib/node_exporter/textfile_collector/process_netstat.prom
