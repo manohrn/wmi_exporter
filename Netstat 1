@@ -1,0 +1,30 @@
+#!/bin/bash
+
+# Define the output file for the Prometheus metrics
+OUTPUT_FILE="/var/lib/node_exporter/textfile_collector/process_netstat.prom"
+
+# Clear the previous content of the output file
+> $OUTPUT_FILE
+
+# Function to extract connections using netstat and lsof
+function get_connections() {
+    # Using netstat to get all established TCP connections
+    netstat -tulnp | grep -E "tcp|udp" | awk '{print $7}' | cut -d"/" -f1 | sort | uniq -c | while read count pid; do
+        # If lsof command is available, use it to get the program name
+        if [ -x "$(command -v lsof)" ]; then
+            prog=$(lsof -p $pid -Fn | grep '^n' | head -n 1 | sed 's/^n//')
+        else
+            prog="unknown"
+        fi
+
+        # Write the metrics in Prometheus format
+        echo "# HELP process_tcp_connections Number of TCP/UDP connections per process" >> $OUTPUT_FILE
+        echo "# TYPE process_tcp_connections gauge" >> $OUTPUT_FILE
+        echo "process_tcp_connections{process=\"$prog\",pid=\"$pid\"} $count" >> $OUTPUT_FILE
+    done
+}
+
+# Call the function to gather and write metrics
+get_connections
+
+# End of script
