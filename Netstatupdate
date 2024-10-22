@@ -1,0 +1,67 @@
+#!/bin/bash
+
+# Define the output file for the Prometheus metrics
+OUTPUT_FILE="/var/lib/node_exporter/textfile_collector/process_perf_metrics.prom"
+
+# Clear the previous content of the output file
+> $OUTPUT_FILE
+
+# Function to capture process performance metrics (CPU, Memory, Disk I/O) and network connections
+function capture_process_metrics() {
+    # Get the list of active processes by their PIDs from netstat
+    netstat -tulnp | grep -E "tcp|udp" | awk '{print $7}' | cut -d"/" -f1 | sort | uniq | while read pid; do
+        # If lsof command is available, use it to get the program name
+        if [ -x "$(command -v lsof)" ]; then
+            prog=$(lsof -p $pid -Fn | grep '^p' | head -n 1 | sed 's/^p//')
+        else
+            prog="unknown"
+        fi
+
+        # Get CPU usage using pidstat (if installed)
+        if [ -x "$(command -v pidstat)" ]; then
+            cpu_usage=$(pidstat -p $pid 1 1 | awk '/^[0-9]/ {print $7}')
+        else
+            cpu_usage="0.0"
+        fi
+
+        # Get memory usage using ps
+        mem_usage=$(ps -p $pid -o %mem --no-headers)
+
+        # Get disk I/O stats using pidstat (if installed)
+        if [ -x "$(command -v pidstat)" ]; then
+            io_stats=$(pidstat -d -p $pid 1 1 | awk '/^[0-9]/ {print $7}')
+        else
+            io_stats="0.0"
+        fi
+
+        # Get the number of TCP and UDP connections for the process
+        tcp_count=$(netstat -anp | grep "^tcp" | grep -w $pid | wc -l)
+        udp_count=$(netstat -anp | grep "^udp" | grep -w $pid | wc -l)
+
+        # Write the metrics in Prometheus format
+        echo "# HELP process_cpu_usage_percent CPU usage as a percentage of the process" >> $OUTPUT_FILE
+        echo "# TYPE process_cpu_usage_percent gauge" >> $OUTPUT_FILE
+        echo "process_cpu_usage_percent{process=\"$prog\",pid=\"$pid\"} $cpu_usage" >> $OUTPUT_FILE
+
+        echo "# HELP process_memory_usage_percent Memory usage as a percentage of the process" >> $OUTPUT_FILE
+        echo "# TYPE process_memory_usage_percent gauge" >> $OUTPUT_FILE
+        echo "process_memory_usage_percent{process=\"$prog\",pid=\"$pid\"} $mem_usage" >> $OUTPUT_FILE
+
+        echo "# HELP process_disk_io Disk I/O statistics for the process" >> $OUTPUT_FILE
+        echo "# TYPE process_disk_io gauge" >> $OUTPUT_FILE
+        echo "process_disk_io{process=\"$prog\",pid=\"$pid\"} $io_stats" >> $OUTPUT_FILE
+
+        echo "# HELP process_tcp_connections Number of TCP connections for the process" >> $OUTPUT_FILE
+        echo "# TYPE process_tcp_connections gauge" >> $OUTPUT_FILE
+        echo "process_tcp_connections{process=\"$prog\",pid=\"$pid\"} $tcp_count" >> $OUTPUT_FILE
+
+        echo "# HELP process_udp_connections Number of UDP connections for the process" >> $OUTPUT_FILE
+        echo "# TYPE process_udp_connections gauge" >> $OUTPUT_FILE
+        echo "process_udp_connections{process=\"$prog\",pid=\"$pid\"} $udp_count" >> $OUTPUT_FILE
+    done
+}
+
+# Call the function to capture and write the metrics
+capture_process_metrics
+
+# End of script
