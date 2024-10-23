@@ -1,0 +1,185 @@
+import psutil
+from prometheus_client import start_http_server, Gauge
+import socket
+import time
+
+# Define Prometheus metrics
+netstat_gauge = Gauge('netstat_process_info', 'Network connection stats by process',
+                      ['process', 'pid', 'protocol', 'local_addr', 'local_port', 'remote_addr', 'remote_port', 'state'])
+
+cpu_usage_gauge = Gauge('process_cpu_usage_percent', 'CPU usage of process', 
+                        ['process', 'pid', 'protocol', 'local_addr', 'local_port', 'remote_addr', 'remote_port', 'state'])
+
+memory_usage_gauge = Gauge('process_memory_usage_bytes', 'Memory usage of process in bytes', 
+                           ['process', 'pid', 'protocol', 'local_addr', 'local_port', 'remote_addr', 'remote_port', 'state'])
+
+open_file_descriptors_gauge = Gauge('process_open_file_descriptors', 'Number of open file descriptors', 
+                                    ['process', 'pid', 'protocol', 'local_addr', 'local_port', 'remote_addr', 'remote_port', 'state'])
+
+connection_state_count = Gauge('netstat_connection_state_count', 'Count of network connections by state and process', 
+                               ['process', 'pid', 'protocol', 'local_addr', 'local_port', 'remote_addr', 'remote_port', 'state'])
+
+tcp_connection_count = Gauge('process_tcp_connection_count', 'Count of TCP connections per process', 
+                             ['process', 'pid', 'protocol', 'local_addr', 'local_port', 'remote_addr', 'remote_port'])
+
+udp_connection_count = Gauge('process_udp_connection_count', 'Count of UDP connections per process', 
+                             ['process', 'pid', 'protocol', 'local_addr', 'local_port', 'remote_addr', 'remote_port'])
+
+bytes_sent_gauge = Gauge('process_network_bytes_sent', 'Total bytes sent by the process', 
+                         ['process', 'pid', 'protocol', 'local_addr', 'local_port', 'remote_addr', 'remote_port'])
+
+bytes_received_gauge = Gauge('process_network_bytes_received', 'Total bytes received by the process', 
+                             ['process', 'pid', 'protocol', 'local_addr', 'local_port', 'remote_addr', 'remote_port'])
+
+
+def get_connection_info():
+    """
+    Gathers network connection info with associated process details and performance metrics.
+    """
+    # Fetch all TCP and UDP connections
+    connections = psutil.net_connections(kind='inet')  # 'inet' covers both TCP and UDP connections
+    for conn in connections:
+        pid = conn.pid
+        if pid:
+            try:
+                # Fetch process info
+                proc = psutil.Process(pid)
+                process_name = proc.name()
+                local_address = conn.laddr
+                remote_address = conn.raddr if conn.raddr else ('', '')
+                protocol = 'tcp' if conn.type == socket.SOCK_STREAM else 'udp'
+                state = conn.status
+
+                # Expose network connection metrics via Prometheus
+                netstat_gauge.labels(
+                    process=process_name,
+                    pid=str(pid),
+                    protocol=protocol,
+                    local_addr=local_address.ip if local_address else '',
+                    local_port=str(local_address.port) if local_address else '',
+                    remote_addr=remote_address.ip if remote_address else '',
+                    remote_port=str(remote_address.port) if remote_address else '',
+                    state=state
+                ).set(1)
+
+                # Expose connection state count metrics
+                connection_state_count.labels(
+                    process=process_name,
+                    pid=str(pid),
+                    protocol=protocol,
+                    local_addr=local_address.ip if local_address else '',
+                    local_port=str(local_address.port) if local_address else '',
+                    remote_addr=remote_address.ip if remote_address else '',
+                    remote_port=str(remote_address.port) if remote_address else '',
+                    state=state
+                ).set(1)
+
+                # Fetch and expose process performance metrics
+                cpu_usage_gauge.labels(
+                    process=process_name,
+                    pid=str(pid),
+                    protocol=protocol,
+                    local_addr=local_address.ip if local_address else '',
+                    local_port=str(local_address.port) if local_address else '',
+                    remote_addr=remote_address.ip if remote_address else '',
+                    remote_port=str(remote_address.port) if remote_address else '',
+                    state=state
+                ).set(proc.cpu_percent(interval=0.1))
+
+                memory_info = proc.memory_info()
+                memory_usage_gauge.labels(
+                    process=process_name,
+                    pid=str(pid),
+                    protocol=protocol,
+                    local_addr=local_address.ip if local_address else '',
+                    local_port=str(local_address.port) if local_address else '',
+                    remote_addr=remote_address.ip if remote_address else '',
+                    remote_port=str(remote_address.port) if remote_address else '',
+                    state=state
+                ).set(memory_info.rss)
+
+                open_file_descriptors_gauge.labels(
+                    process=process_name,
+                    pid=str(pid),
+                    protocol=protocol,
+                    local_addr=local_address.ip if local_address else '',
+                    local_port=str(local_address.port) if local_address else '',
+                    remote_addr=remote_address.ip if remote_address else '',
+                    remote_port=str(remote_address.port) if remote_address else '',
+                    state=state
+                ).set(proc.num_fds())
+
+                # Fetch and expose network bytes sent/received for each connection
+                io_counters = proc.io_counters()
+                bytes_sent_gauge.labels(
+                    process=process_name,
+                    pid=str(pid),
+                    protocol=protocol,
+                    local_addr=local_address.ip if local_address else '',
+                    local_port=str(local_address.port) if local_address else '',
+                    remote_addr=remote_address.ip if remote_address else '',
+                    remote_port=str(remote_address.port) if remote_address else ''
+                ).set(io_counters.bytes_sent)
+
+                bytes_received_gauge.labels(
+                    process=process_name,
+                    pid=str(pid),
+                    protocol=protocol,
+                    local_addr=local_address.ip if local_address else '',
+                    local_port=str(local_address.port) if local_address else '',
+                    remote_addr=remote_address.ip if remote_address else '',
+                    remote_port=str(remote_address.port) if remote_address else ''
+                ).set(io_counters.bytes_recv)
+
+                # Track TCP and UDP connection counts
+                if protocol == 'tcp':
+                    tcp_connection_count.labels(
+                        process=process_name,
+                        pid=str(pid),
+                        protocol=protocol,
+                        local_addr=local_address.ip if local_address else '',
+                        local_port=str(local_address.port) if local_address else '',
+                        remote_addr=remote_address.ip if remote_address else '',
+                        remote_port=str(remote_address.port) if remote_address else ''
+                    ).set(1)
+                elif protocol == 'udp':
+                    udp_connection_count.labels(
+                        process=process_name,
+                        pid=str(pid),
+                        protocol=protocol,
+                        local_addr=local_address.ip if local_address else '',
+                        local_port=str(local_address.port) if local_address else '',
+                        remote_addr=remote_address.ip if remote_address else '',
+                        remote_port=str(remote_address.port) if remote_address else ''
+                    ).set(1)
+
+            except psutil.NoSuchProcess:
+                # Process might have terminated, so we skip it
+                continue
+
+
+def clear_metrics():
+    """
+    Clears existing metrics to avoid stale metrics in the Prometheus exposition.
+    """
+    netstat_gauge.clear()
+    cpu_usage_gauge.clear()
+    memory_usage_gauge.clear()
+    open_file_descriptors_gauge.clear()
+    connection_state_count.clear()
+    tcp_connection_count.clear()
+    udp_connection_count.clear()
+    bytes_sent_gauge.clear()
+    bytes_received_gauge.clear()
+
+
+if __name__ == '__main__':
+    # Start the Prometheus exporter HTTP server on port 8000
+    start_http_server(8000)
+
+    while True:
+        clear_metrics()  # Clear old metrics
+        get_connection_info()  # Gather and update metrics
+
+        # Sleep before the next iteration (adjust interval as needed)
+        time.sleep(10)
