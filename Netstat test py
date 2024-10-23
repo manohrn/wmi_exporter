@@ -1,0 +1,64 @@
+import psutil
+from collections import defaultdict
+import os
+import time
+
+# Directory where .prom files are written for Prometheus to scrape
+PROM_FILE_DIR = "/path/to/prometheus/textfile/dir"
+PROM_FILE_PATH = os.path.join(PROM_FILE_DIR, "netstat_process_metrics.prom")
+
+def collect_and_write_prom_metrics():
+    tcp_counts = defaultdict(int)
+    udp_counts = defaultdict(int)
+    
+    # Open the .prom file for writing
+    with open(PROM_FILE_PATH, 'w') as prom_file:
+        # Get network connections (both TCP and UDP)
+        connections = psutil.net_connections(kind='inet')  # inet includes both TCP and UDP
+        
+        for conn in connections:
+            pid = conn.pid
+            if pid:
+                try:
+                    proc = psutil.Process(pid)
+                    process_name = proc.name()
+                    local_address = conn.laddr
+                    remote_address = conn.raddr if conn.raddr else ('', '')
+                    protocol = 'tcp' if conn.type == psutil.SOCK_STREAM else 'udp'
+                    
+                    if protocol == 'tcp':
+                        tcp_counts[(process_name, pid)] += 1
+                    else:
+                        udp_counts[(process_name, pid)] += 1
+                    
+                    # Write details as Prometheus metrics in the file
+                    prom_file.write(
+                        f'netstat_process_info{{process="{process_name}", pid="{pid}", protocol="{protocol}", '
+                        f'local_addr="{local_address.ip}", local_port="{local_address.port}", '
+                        f'remote_addr="{remote_address.ip if remote_address else ""}", remote_port="{remote_address.port if remote_address else ""}"}} 1\n'
+                    )
+
+                except psutil.NoSuchProcess:
+                    # Handle case where process no longer exists (it may have terminated)
+                    continue
+                except Exception as e:
+                    # Catch any other exceptions that might occur
+                    print(f"Error processing PID {pid}: {e}")
+                    continue
+
+        # Write TCP and UDP counts per process
+        for (process_name, pid), count in tcp_counts.items():
+            prom_file.write(
+                f'process_tcp_connection_count{{process="{process_name}", pid="{pid}"}} {count}\n'
+            )
+
+        for (process_name, pid), count in udp_counts.items():
+            prom_file.write(
+                f'process_udp_connection_count{{process="{process_name}", pid="{pid}"}} {count}\n'
+            )
+
+if __name__ == '__main__':
+    # Run the collection and file writing in a loop, updating every 30 seconds
+    while True:
+        collect_and_write_prom_metrics()
+        time.sleep(30)  # Update every 30 seconds
