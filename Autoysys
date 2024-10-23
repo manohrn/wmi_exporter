@@ -1,0 +1,240 @@
+To fully decouple the SQL queries from the Python script so that the queries are only referred to in SQL files and not embedded in the script at all, here’s the revised approach:
+
+	1.	Store SQL Queries in External Files:
+	•	Place each SQL query in its own .sql file.
+	•	The Python script will dynamically load the SQL files, execute them, and process the results.
+	2.	SQL File Structure:
+	•	All SQL queries will be stored in a folder (e.g., sql_queries/).
+	•	Example structure:
+
+sql_queries/
+├── job_success_rate.sql
+├── job_failure_count.sql
+├── long_running_jobs.sql
+├── avg_execution_time.sql
+└── job_schedule_adherence.sql
+
+
+
+1. Create SQL Query Files:
+
+Here are the contents of each .sql file:
+
+	1.	job_success_rate.sql:
+
+SELECT 
+    j.job_name, 
+    SUM(CASE WHEN js.status = 'SU' THEN 1 ELSE 0 END) AS success_count,
+    COUNT(js.status) AS total_runs,
+    (SUM(CASE WHEN js.status = 'SU' THEN 1 ELSE 0 END) * 100.0) / COUNT(js.status) AS success_rate
+FROM 
+    UJO_JOB j
+JOIN 
+    UJO_JOBST js ON j.joid = js.joid
+GROUP BY 
+    j.job_name;
+
+
+	2.	job_failure_count.sql:
+
+SELECT 
+    j.job_name, 
+    COUNT(js.status) AS failure_count
+FROM 
+    UJO_JOB j
+JOIN 
+    UJO_JOBST js ON j.joid = js.joid
+WHERE 
+    js.status = 'FA' 
+GROUP BY 
+    j.job_name;
+
+
+	3.	long_running_jobs.sql:
+
+SELECT 
+    j.job_name,
+    js.start_time,
+    DATEDIFF(SECOND, js.start_time, GETDATE()) AS runtime_seconds
+FROM 
+    UJO_JOB j
+JOIN 
+    UJO_JOBST js ON j.joid = js.joid
+WHERE 
+    js.status = 'RU'
+ORDER BY 
+    runtime_seconds DESC;
+
+
+	4.	avg_execution_time.sql:
+
+SELECT 
+    j.job_name,
+    AVG(DATEDIFF(SECOND, js.start_time, js.end_time)) AS avg_execution_time_seconds
+FROM 
+    UJO_JOB j
+JOIN 
+    UJO_JOBST js ON j.joid = js.joid
+WHERE 
+    js.status = 'SU'
+GROUP BY 
+    j.job_name;
+
+
+	5.	job_schedule_adherence.sql:
+
+SELECT 
+    j.job_name,
+    js.sched_time,  -- Scheduled start time
+    js.start_time,  -- Actual start time
+    DATEDIFF(SECOND, js.sched_time, js.start_time) AS delay_seconds
+FROM 
+    UJO_JOB j
+JOIN 
+    UJO_JOBST js ON j.joid = js.joid
+WHERE 
+    js.status IN ('SU', 'FA')
+ORDER BY 
+    delay_seconds DESC;
+
+
+
+2. Python Script to Execute Queries Dynamically:
+
+The Python script will refer to these files and execute them. The logic will not contain the queries directly.
+
+import pyodbc
+import pandas as pd
+import os
+
+# Database connection details (adjust as needed)
+DB_HOST = "your_db_host"
+DB_NAME = "your_db_name"
+USERNAME = "your_db_username"
+PASSWORD = "your_db_password"
+
+# Create the database connection
+conn_str = (
+    f"DRIVER={{ODBC Driver 17 for SQL Server}};"  # Adjust for your DB type
+    f"SERVER={DB_HOST};"
+    f"DATABASE={DB_NAME};"
+    f"UID={USERNAME};"
+    f"PWD={PASSWORD};"
+)
+conn = pyodbc.connect(conn_str)
+
+# Prometheus text file collector output path
+OUTPUT_FILE = "/var/lib/node_exporter/textfile_collector/autosys_metrics.prom"
+
+# Clear the file at the beginning of the script
+with open(OUTPUT_FILE, 'w') as f:
+    pass
+
+# Function to write Prometheus-formatted metrics
+def write_prometheus_metrics(metrics):
+    with open(OUTPUT_FILE, 'a') as f:
+        for metric in metrics:
+            f.write(f"{metric}\n")
+
+# Function to load SQL query from a file
+def load_query_from_file(file_path):
+    with open(file_path, 'r') as f:
+        return f.read()
+
+# Function to fetch AutoSys metrics by executing queries from SQL files
+def fetch_autosys_metrics():
+    metrics = {}
+
+    # Define the directory where SQL query files are stored
+    sql_directory = "sql_queries/"
+
+    # Dynamically load and execute each query
+    queries = {
+        "job_success_rate": "job_success_rate.sql",
+        "job_failure_count": "job_failure_count.sql",
+        "long_running_jobs": "long_running_jobs.sql",
+        "avg_execution_time": "avg_execution_time.sql",
+        "job_schedule_adherence": "job_schedule_adherence.sql"
+    }
+
+    for metric_name, sql_file in queries.items():
+        sql_path = os.path.join(sql_directory, sql_file)
+        query = load_query_from_file(sql_path)
+        df = pd.read_sql(query, conn)
+        metrics[metric_name] = df
+
+    return metrics
+
+# Function to convert each DataFrame to Prometheus format and append it to the .prom file
+def export_metrics_to_prometheus(metrics):
+    prom_metrics = []
+
+    # Export Job Success Rate
+    df = metrics["job_success_rate"]
+    for index, row in df.iterrows():
+        prom_metrics.append(f'job_success_rate{{job_name="{row["job_name"]}"}} {row["success_rate"]}')
+
+    # Export Job Failure Count
+    df = metrics["job_failure_count"]
+    for index, row in df.iterrows():
+        prom_metrics.append(f'job_failure_count{{job_name="{row["job_name"]}"}} {row["failure_count"]}')
+
+    # Export Long-Running Jobs
+    df = metrics["long_running_jobs"]
+    for index, row in df.iterrows():
+        prom_metrics.append(f'job_long_running_seconds{{job_name="{row["job_name"]}"}} {row["runtime_seconds"]}')
+
+    # Export Average Execution Time
+    df = metrics["avg_execution_time"]
+    for index, row in df.iterrows():
+        prom_metrics.append(f'job_avg_execution_time_seconds{{job_name="{row["job_name"]}"}} {row["avg_execution_time_seconds"]}')
+
+    # Export Job Schedule Adherence (delays)
+    df = metrics["job_schedule_adherence"]
+    for index, row in df.iterrows():
+        prom_metrics.append(f'job_schedule_delay_seconds{{job_name="{row["job_name"]}"}} {row["delay_seconds"]}')
+
+    # Write all the Prometheus metrics to the file
+    write_prometheus_metrics(prom_metrics)
+
+# Fetch the metrics
+autosys_metrics = fetch_autosys_metrics()
+
+# Export the metrics to Prometheus format
+export_metrics_to_prometheus(autosys_metrics)
+
+# Close the database connection
+conn.close()
+
+Explanation of the Changes:
+
+	1.	SQL Queries in External Files:
+	•	Each SQL query is placed in a separate file within the sql_queries/ folder.
+	•	The Python script no longer contains the SQL queries directly, making it easier to maintain and update without modifying the script.
+	2.	Loading SQL Files:
+	•	The load_query_from_file function reads the contents of each .sql file and returns the SQL query as a string. This allows the script to execute the query dynamically.
+	•	A dictionary queries maps each metric name to its corresponding SQL file name.
+	3.	Dynamic Query Execution:
+	•	The script iterates over the queries dictionary, loading and executing each SQL file dynamically. The results are stored in the metrics dictionary.
+	4.	Prometheus Metrics Export:
+	•	The results from the SQL queries are converted into Prometheus format, just like before, and written to the .prom file for Prometheus to scrape.
+
+How to Update Queries:
+
+If you need to modify or add a query, you can now do so by editing or adding a new .sql file without touching the main Python script.
+
+	•	Add New Metric: Create a new .sql file, add it to the sql_queries/ folder, and reference it in the queries dictionary in the Python script.
+	•	Update an Existing Query: Simply edit the corresponding .sql file, and the script will automatically use the updated query.
+
+Example Directory Structure:
+
+autosys_metrics/
+├── autosys_metrics_exporter.py  # The Python script
+└── sql_queries/                 # Directory containing the SQL files
+    ├── job_success_rate.sql
+    ├── job_failure_count.sql
+    ├── long_running_jobs.sql
+    ├── avg_execution_time.sql
+    └── job_schedule_adherence.sql
+
+This approach allows for complete separation of concerns, keeping the SQL queries outside of the main Python logic and making it much easier to manage.
