@@ -1,0 +1,49 @@
+import csv
+import json
+
+def csv_to_custom_json_with_payload(csv_file_path, json_file_path):
+    # Initialize an empty dictionary to store the data
+    result = {}
+
+    # Open the CSV file and read its contents
+    with open(csv_file_path, mode='r') as csv_file:
+        csv_reader = csv.DictReader(csv_file)
+
+        for row in csv_reader:
+            # Assume each row has a unique ID field (e.g., 'id')
+            unique_id = row.get("id")
+
+            # Create the JSON structure for each unique ID, including labels and template_variables
+            result[unique_id] = {
+                "labels": {
+                    "os": row.get("os", "linux"),  # Default value is "linux" if not provided
+                    "kafka_baseconfig": "id",  # Fixed field from the provided structure
+                    "environment": row.get("env_name", "trn101"),  # Taken from the CSV or default
+                    "snippetype": "kafka_exporter"  # Fixed field from the provided structure
+                },
+                "template_variables": {
+                    "kafka_monitors": [
+                        {
+                            "job_name": row.get("job_name"),
+                            "target_name": row.get("target_name"),
+                            "server_name": row.get("server_name"),
+                            "env_name": row.get("env_name"),
+                            "fqdn_name": row.get("fqdn_name"),
+                            "component_name": row.get("component_name"),
+                            "component_id": int(row.get("component_id", 0)),  # Ensure component_id is an integer
+                            "dc": row.get("dc")
+                        }
+                    ]
+                }
+            }
+
+    # Write the final result to a JSON file
+    with open(json_file_path, mode='w') as json_file:
+        json.dump(result, json_file, indent=4)
+
+# Example usage
+csv_file = 'data.csv'  # Your input CSV file
+json_file = 'formatted_output_with_payload.json'  # Output JSON file
+csv_to_custom_json_with_payload(csv_file, json_file)
+
+print(f"CSV data from {csv_file} has been converted to JSON format with payload and saved as {json_file}.")
