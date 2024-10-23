@@ -1,0 +1,26 @@
+import csv
+import json
+from collections import defaultdict
+
+def csv_to_grouped_json(csv_file_path, json_file_path):
+    # Create a defaultdict to group rows by 'name'
+    grouped_data = defaultdict(list)
+    
+    # Open the CSV file and read its contents
+    with open(csv_file_path, mode='r') as csv_file:
+        csv_reader = csv.DictReader(csv_file)  # Use DictReader to convert each row into a dictionary
+        
+        for row in csv_reader:
+            name = row.pop('name')  # Extract the 'name' field and remove it from the row
+            grouped_data[name].append(row)  # Group rows by 'name'
+
+    # Convert defaultdict to a normal dict and write the data to a JSON file
+    with open(json_file_path, mode='w') as json_file:
+        json.dump(grouped_data, json_file, indent=4)  # Convert the dict to JSON and write it
+
+# Example usage
+csv_file = 'data.csv'
+json_file = 'grouped_data.json'
+csv_to_grouped_json(csv_file, json_file)
+
+print(f"CSV data from {csv_file} has been grouped by 'name' and saved as {json_file}.")
