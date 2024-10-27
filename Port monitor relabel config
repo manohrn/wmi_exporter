@@ -1,0 +1,30 @@
+metrics:
+  wal_directory: /tmp/wal
+  configs:
+    - name: blackbox_integration
+      scrape_configs:
+        - job_name: 'blackbox'
+          metrics_path: /probe
+          params:
+            module: [tcp_443]  # Replace with your module name in Blackbox Exporter
+          static_configs:
+            - targets:
+              - example.com:443  # Replace with your target hostname and port
+          relabel_configs:
+            - source_labels: [__address__]
+              regex: '(.+):([0-9]+)'
+              target_label: __param_target
+              replacement: '${1}:${2}'
+            - source_labels: [__param_target]
+              target_label: instance
+            - source_labels: [__param_target]
+              regex: '.*:([0-9]+)'
+              target_label: port  # Adds the port as a label
+              replacement: '${1}'
+            - target_label: __address__
+              replacement: '<blackbox_exporter_address>:<port>'  # Replace with Blackbox Exporter's IP and port
+      remote_write:
+        - url: https://<your-grafana-instance>/api/prom/push
+          basic_auth:
+            username: '<username>'
+            password: '<password>'
