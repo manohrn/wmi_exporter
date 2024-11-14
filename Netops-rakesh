@@ -1,0 +1,56 @@
+from confluent_kafka import Consumer, KafkaException, KafkaError
+import logging
+
+# Configuration for SSL and Kafka
+config = {
+    'bootstrap.servers': 'your_kafka_broker:9093',  # Change to your broker's address
+    'group.id': 'your_consumer_group',
+    'auto.offset.reset': 'earliest',  # or 'latest' depending on your needs
+    'security.protocol': 'SSL',  # Use SSL for secure communication
+    'ssl.ca.location': '/path/to/ca.crt',  # Path to the CA certificate
+    'ssl.certificate.location': '/path/to/ssl.crt',  # Path to the client certificate
+    'ssl.key.location': '/path/to/ssl.key',  # Path to the client private key
+    'ssl.key.password': 'your_key_password'  # Optional: If your key is password-protected
+}
+
+# Initialize logger
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Define the Kafka consumer
+consumer = Consumer(config)
+
+# Subscribe to your Kafka topic
+topic = 'your_topic_name'  # Replace with your actual topic
+consumer.subscribe([topic])
+
+def consume_messages():
+    try:
+        while True:
+            # Polling for messages with a timeout of 1 second
+            msg = consumer.poll(timeout=1.0)
+
+            if msg is None:
+                # No message available within the timeout
+                continue
+            elif msg.error():
+                if msg.error().code() == KafkaError._PARTITION_EOF:
+                    # End of partition reached
+                    logger.info(f"End of partition reached: {msg.topic()} [{msg.partition()}] at offset {msg.offset()}")
+                else:
+                    # Other Kafka errors
+                    raise KafkaException(msg.error())
+            else:
+                # Valid message received
+                logger.info(f"Consumed message: {msg.value().decode('utf-8')}")
+
+    except KeyboardInterrupt:
+        logger.info("Consuming stopped by user.")
+    except Exception as e:
+        logger.error(f"Error consuming messages: {e}")
+    finally:
+        # Close the consumer connection
+        consumer.close()
+
+if __name__ == '__main__':
+    consume_messages()
