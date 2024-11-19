@@ -1,0 +1,104 @@
+To ensure that your Python script’s dependencies, such as oracledb and Prometheus client, are available even after a server restart, you need a more robust approach to manage your environment and dependencies. Here are some suggestions:
+
+1. Use a Virtual Environment
+
+	•	Create a Python virtual environment to isolate your dependencies from the system’s Python environment:
+
+python3 -m venv /path/to/venv
+
+
+	•	Activate the virtual environment:
+
+source /path/to/venv/bin/activate
+
+
+	•	Install the dependencies inside the virtual environment:
+
+pip install oracledb prometheus_client
+
+
+	•	Update your systemd service to use the virtual environment. Modify the ExecStart in the service file to activate the virtual environment and execute the script:
+
+ExecStart=/bin/bash -c "source /path/to/venv/bin/activate && python /path/to/your_script.py"
+
+2. Install Dependencies Globally (Persistent Installation)
+
+If you don’t want to use a virtual environment:
+	•	Install the dependencies globally (persistent installation):
+
+sudo pip install oracledb prometheus_client
+
+
+	•	This method works if you’re okay with dependencies being installed system-wide.
+
+3. Package Your Script as a Docker Container
+
+A containerized environment ensures your dependencies are bundled with your script and remain intact across restarts.
+	•	Create a Dockerfile for your script:
+
+FROM python:3.9
+
+WORKDIR /app
+COPY . /app
+
+RUN pip install oracledb prometheus_client
+
+CMD ["python", "your_script.py"]
+
+
+	•	Build the Docker image:
+
+docker build -t your_script_image .
+
+
+	•	Run the container as a systemd service:
+
+ExecStart=/usr/bin/docker run --rm your_script_image
+
+4. Use a Persistent Python Environment
+
+	•	If your server’s default Python environment is being reset, check if a system reset mechanism (like tmpfs or ephemeral disk) is erasing changes.
+	•	Instead of using /tmp or other non-persistent directories, use a persistent directory (e.g., /opt or /var/lib) to store the Python installation or dependencies.
+
+5. Run a Dependency Check Script on Startup
+
+As a workaround:
+	•	Write a script to check and install dependencies if missing, and run this as a systemd service or as part of your main script:
+
+# dependency_check.sh
+#!/bin/bash
+pip show oracledb prometheus_client >/dev/null 2>&1 || pip install oracledb prometheus_client
+
+
+	•	Add this script as a ExecStartPre step in your systemd service file:
+
+ExecStartPre=/path/to/dependency_check.sh
+
+6. Use System Python with Persistent Install
+
+	•	If the server uses a non-persistent disk for libraries, install dependencies in a persistent directory:
+
+pip install --target=/path/to/persistent/libs oracledb prometheus_client
+
+
+	•	Update the PYTHONPATH in your systemd service file:
+
+Environment=PYTHONPATH=/path/to/persistent/libs
+
+Recommended Systemd Service Example:
+
+[Unit]
+Description=Python Script Service
+After=network.target
+
+[Service]
+User=your_user
+WorkingDirectory=/path/to/your/script
+Environment=PYTHONPATH=/path/to/persistent/libs
+ExecStart=/path/to/venv/bin/python /path/to/your_script.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+
+These approaches will ensure your dependencies are persistent and prevent frequent reinstallation. Let me know if you need help with implementation!
