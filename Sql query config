@@ -1,0 +1,22 @@
+integrations:
+  mssql_exporter:
+    enabled: true
+    data_source_name: "sqlserver://username:password@host:port?database=your_database"
+
+    custom_metrics:
+      - metric_name: mssql_worker_thread_usage
+        type: gauge
+        help: "Percentage of worker thread usage and availability in MSSQL."
+        values:
+          - sql: |
+              SELECT 
+                  @@servername AS sql_instance,
+                  osi.max_workers_count,
+                  ot.[total_threads_used],
+                  (((ot.[total_threads_used]*1.0/osi.max_workers_count)-1)*-100) AS PctWTAvail,
+                  (((ot.[total_threads_used]*1.0/osi.max_workers_count)*100)) AS PctWTUsed
+              FROM sys.dm_os_sys_info osi
+              CROSS APPLY (SELECT COUNT(*) AS total_threads_used FROM sys.dm_os_threads) ot
+              CROSS APPLY (SELECT COUNT(*) AS total_worker_threads FROM sys.dm_os_workers) wt
+            label: [sql_instance]
+            value: PctWTUsed
