@@ -1,0 +1,63 @@
+import os
+import re
+from collections import defaultdict
+
+# List of .prom file paths to merge
+input_files = ["file1.prom", "file2.prom", "file3.prom"]
+
+# Output file for the merged result
+output_file = "merged_metrics.prom"
+
+# Regular expression to match Prometheus metrics
+metric_regex = re.compile(r'^([\w:]+)\{([^}]*)\}\s+([-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?)$')
+
+# Function to normalize labels
+def normalize_labels(label_str):
+    # Sort and normalize labels to avoid false positives due to label order differences
+    labels = label_str.split(",")
+    return tuple(sorted([label.strip() for label in labels]))
+
+# Dictionary to store unique metrics
+unique_metrics = {}
+
+# Process each input file
+for file_path in input_files:
+    if not os.path.exists(file_path):
+        print(f"File {file_path} not found. Skipping.")
+        continue
+
+    with open(file_path, "r") as file:
+        for line in file:
+            line = line.strip()
+            
+            # Skip comments and empty lines
+            if line.startswith("#") or not line:
+                continue
+            
+            match = metric_regex.match(line)
+            if match:
+                metric_name = match.group(1)  # Metric name
+                labels = normalize_labels(match.group(2))  # Labels
+                value = match.group(3)  # Metric value
+                
+                # Create a unique key for the metric
+                metric_key = (metric_name, labels)
+                
+                # Store the first occurrence of the metric
+                if metric_key not in unique_metrics:
+                    unique_metrics[metric_key] = line
+
+# Write the unique metrics to the output file
+with open(output_file, "w") as file:
+    for metric in unique_metrics.values():
+        file.write(metric + "\n")
+
+# Remove the input files
+for file_path in input_files:
+    try:
+        os.remove(file_path)
+        print(f"Deleted file: {file_path}")
+    except Exception as e:
+        print(f"Error deleting file {file_path}: {e}")
+
+print(f"Merged metrics saved to {output_file}.")
