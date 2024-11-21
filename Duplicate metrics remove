@@ -1,0 +1,48 @@
+import re
+
+# Path to the .prom file
+file_path = "metrics.prom"
+
+# Regular expression to match Prometheus metrics
+metric_regex = re.compile(r'^([\w:]+)\{([^}]*)\}\s+([-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?)$')
+
+# Function to normalize labels
+def normalize_labels(label_str):
+    # Sort and normalize labels to avoid false positives due to label order differences
+    labels = label_str.split(",")
+    return tuple(sorted([label.strip() for label in labels]))
+
+# Dictionary to store unique metrics
+unique_metrics = {}
+
+# Read and process the file
+with open(file_path, "r") as file:
+    lines = file.readlines()
+
+# Iterate over lines and identify duplicates
+for line in lines:
+    line = line.strip()
+    
+    # Skip comments and empty lines
+    if line.startswith("#") or not line:
+        continue
+
+    match = metric_regex.match(line)
+    if match:
+        metric_name = match.group(1)  # Metric name
+        labels = normalize_labels(match.group(2))  # Labels
+        value = match.group(3)  # Metric value
+
+        # Create a unique key for the metric
+        metric_key = (metric_name, labels)
+        
+        # Store the first occurrence of the metric
+        if metric_key not in unique_metrics:
+            unique_metrics[metric_key] = line
+
+# Write back the unique metrics to the file
+with open(file_path, "w") as file:
+    for metric in unique_metrics.values():
+        file.write(metric + "\n")
+
+print(f"Duplicate metrics removed. Updated file saved to {file_path}.")
