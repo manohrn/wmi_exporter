@@ -1,0 +1,50 @@
+import re
+from collections import defaultdict
+
+# Path to the .prom file
+file_path = "metrics.prom"
+
+# Regular expression to match Prometheus metrics
+metric_regex = re.compile(r'^([\w:]+)\{([^}]*)\}\s+([-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?)$')
+
+# Dictionary to store metrics
+metric_store = defaultdict(list)
+
+# Function to normalize labels
+def normalize_labels(label_str):
+    # Sort and normalize labels to avoid false positives due to label order differences
+    labels = label_str.split(",")
+    return tuple(sorted([label.strip() for label in labels]))
+
+# Read the .prom file
+with open(file_path, "r") as file:
+    for line_num, line in enumerate(file, start=1):
+        line = line.strip()
+        
+        # Skip comments and empty lines
+        if line.startswith("#") or not line:
+            continue
+
+        match = metric_regex.match(line)
+        if match:
+            metric_name = match.group(1)  # Metric name
+            labels = normalize_labels(match.group(2))  # Labels
+            value = match.group(3)  # Metric value
+
+            # Create a unique key for the metric
+            metric_key = (metric_name, labels)
+
+            # Store the metric with its line number
+            metric_store[metric_key].append(line_num)
+
+# Find duplicate metrics
+duplicates = {key: lines for key, lines in metric_store.items() if len(lines) > 1}
+
+# Output results
+if duplicates:
+    print("Duplicate metrics found:")
+    for (metric_name, labels), lines in duplicates.items():
+        label_str = ",".join(labels)
+        print(f"- Metric: {metric_name}{{{label_str}}}, Duplicate Lines: {lines}")
+else:
+    print("No duplicate metrics found.")
