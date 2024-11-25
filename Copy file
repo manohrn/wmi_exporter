@@ -1,0 +1,33 @@
+import shutil
+import os
+
+def copy_file(source_path, destination_path):
+    """
+    Copy a file from the source path to the destination path.
+    
+    Args:
+        source_path (str): The full path to the source file.
+        destination_path (str): The directory where the file should be copied.
+    """
+    try:
+        # Ensure the source file exists
+        if not os.path.isfile(source_path):
+            print(f"Source file does not exist: {source_path}")
+            return
+
+        # Ensure the destination directory exists
+        if not os.path.isdir(destination_path):
+            print(f"Destination directory does not exist: {destination_path}")
+            return
+
+        # Copy the file
+        shutil.copy(source_path, destination_path)
+        print(f"File copied successfully from {source_path} to {destination_path}")
+    except Exception as e:
+        print(f"Error occurred while copying the file: {e}")
+
+# Example usage
+source_file = "/path/to/source/file.txt"  # Replace with your source file path
+destination_dir = "/path/to/destination/directory"  # Replace with your destination directory
+
+copy_file(source_file, destination_dir)
