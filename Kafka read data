@@ -1,0 +1,72 @@
+from confluent_kafka import Consumer, KafkaException
+from prometheus_client import start_http_server, Gauge
+import json
+import time
+
+# Kafka configuration
+KAFKA_BROKER = 'localhost:9092'
+KAFKA_TOPIC = 'your_topic_name'
+KAFKA_GROUP = 'prometheus_group'
+
+# Prometheus metrics
+metrics = {}
+
+# Create a Kafka consumer
+consumer_conf = {
+    'bootstrap.servers': KAFKA_BROKER,
+    'group.id': KAFKA_GROUP,
+    'auto.offset.reset': 'earliest',
+}
+consumer = Consumer(consumer_conf)
+
+def process_message(message):
+    """
+    Process Kafka message and convert it into Prometheus metrics.
+    Assumes the message is in JSON format with key-value pairs for metrics.
+    """
+    try:
+        data = json.loads(message)
+        for key, value in data.items():
+            if key not in metrics:
+                metrics[key] = Gauge(key, f"Metric for {key}")
+            metrics[key].set(value)
+    except Exception as e:
+        print(f"Error processing message: {e}")
+
+def fetch_data():
+    """
+    Fetch data from Kafka topic for a fixed duration.
+    """
+    consumer.subscribe([KAFKA_TOPIC])
+    try:
+        while True:
+            msg = consumer.poll(timeout=1.0)
+            if msg is None:
+                continue
+            if msg.error():
+                if msg.error().code() == KafkaException._PARTITION_EOF:
+                    # End of partition event
+                    continue
+                else:
+                    print(f"Kafka error: {msg.error()}")
+                    continue
+
+            process_message(msg.value().decode('utf-8'))
+    except Exception as e:
+        print(f"Error consuming messages: {e}")
+    finally:
+        consumer.close()
+
+if __name__ == "__main__":
+    # Start Prometheus HTTP server
+    PROMETHEUS_PORT = 8000
+    print(f"Starting Prometheus metrics server on port {PROMETHEUS_PORT}...")
+    start_http_server(PROMETHEUS_PORT)
+
+    # Fetch data every 5 minutes
+    FETCH_INTERVAL = 5 * 60  # 5 minutes in seconds
+    while True:
+        print("Fetching data from Kafka...")
+        fetch_data()
+        print(f"Sleeping for {FETCH_INTERVAL} seconds...")
+        time.sleep(FETCH_INTERVAL)
