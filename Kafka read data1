@@ -1,0 +1,97 @@
+from confluent_kafka import Consumer, KafkaException
+from prometheus_client import start_http_server, Gauge
+import json
+import time
+import signal
+import sys
+
+# Kafka configuration
+KAFKA_BROKER = 'localhost:9092'
+KAFKA_TOPIC = 'your_topic_name'
+KAFKA_GROUP = 'prometheus_group'
+
+# Prometheus metrics
+metrics = {}
+
+# Create a Kafka consumer
+consumer_conf = {
+    'bootstrap.servers': KAFKA_BROKER,
+    'group.id': KAFKA_GROUP,
+    'auto.offset.reset': 'earliest',
+}
+consumer = Consumer(consumer_conf)
+
+def process_message(message):
+    """
+    Process Kafka message and convert it into Prometheus metrics.
+    Skips non-numeric values.
+    """
+    try:
+        data = json.loads(message)  # Parse the JSON message
+        for key, value in data.items():
+            metric_name = key.replace(" ", "_").replace("-", "_").lower()
+
+            # Check if value is numeric
+            if isinstance(value, (int, float)):
+                if metric_name not in metrics:
+                    metrics[metric_name] = Gauge(metric_name, f"Metric for {key}")
+                metrics[metric_name].set(value)
+            else:
+                print(f"Skipping non-numeric value for {key}: {value}")
+    except json.JSONDecodeError as e:
+        print(f"JSON decoding error: {e} - Raw message: {message}")
+    except Exception as e:
+        print(f"Error processing message: {e}")
+
+def fetch_data():
+    """
+    Fetch data from Kafka topic for a fixed duration.
+    """
+    try:
+        msg = consumer.poll(timeout=1.0)
+        if msg is None:
+            return
+        if msg.error():
+            if msg.error().code() == KafkaException._PARTITION_EOF:
+                return
+            else:
+                print(f"Kafka error: {msg.error()}")
+                return
+        raw_message = msg.value().decode('utf-8')
+        print(f"Raw message: {raw_message}")  # Log raw message for debugging
+        process_message(raw_message)
+    except Exception as e:
+        print(f"Error consuming messages: {e}")
+
+def shutdown_handler(signum, frame):
+    """Handle script shutdown gracefully."""
+    print("Shutting down...")
+    consumer.close()
+    sys.exit(0)
+
+if __name__ == "__main__":
+    # Start Prometheus HTTP server
+    PROMETHEUS_PORT = 8000
+    print(f"Starting Prometheus metrics server on port {PROMETHEUS_PORT}...")
+    start_http_server(PROMETHEUS_PORT)
+
+    # Signal handling for graceful shutdown
+    signal.signal(signal.SIGINT, shutdown_handler)
+    signal.signal(signal.SIGTERM, shutdown_handler)
+
+    # Subscribe to Kafka topic
+    consumer.subscribe([KAFKA_TOPIC])
+
+    # Fetch data every 5 minutes
+    FETCH_INTERVAL = 5 * 60  # 5 minutes in seconds
+    try:
+        while True:
+            print("Fetching data from Kafka...")
+            start_time = time.time()
+            while time.time() - start_time < FETCH_INTERVAL:
+                fetch_data()
+            print(f"Sleeping for {FETCH_INTERVAL} seconds...")
+            time.sleep(FETCH_INTERVAL)
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        shutdown_handler(None, None)
