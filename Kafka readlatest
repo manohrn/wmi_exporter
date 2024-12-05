@@ -28,7 +28,7 @@ def csv_to_custom_json_with_payload(csv_file_path, json_file_path):
                 }
 
             # Create the payload for this row
-            payload = {
+            kafka_monitor = {
                 "job_name": row.get("job_name"),
                 "target_name": row.get("target_name"),
                 "server_name": server_name,
@@ -39,13 +39,13 @@ def csv_to_custom_json_with_payload(csv_file_path, json_file_path):
                 "dc": row.get("dc")
             }
 
-            # Append the payload for every row to kafka_monitors
-            kafka_monitor = payload.copy()  # Create a copy of the payload
+            # Add Kafka Connect Cluster ID only for "connect" components
             if row.get("component_name") == "connect":
-                # Add Kafka Connect Cluster ID only for "connect" components
                 kafka_monitor["kafka_connect_cluster_id"] = "Kafka_connect_cluster_id"
-            
-            result[server_name]["template_variables"]["kafka_monitors"].append(kafka_monitor)
+
+            # Prevent duplicate entries in kafka_monitors
+            if kafka_monitor not in result[server_name]["template_variables"]["kafka_monitors"]:
+                result[server_name]["template_variables"]["kafka_monitors"].append(kafka_monitor)
 
     # Write the final result to a JSON file
     with open(json_file_path, mode='w') as json_file:
