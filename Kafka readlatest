@@ -1,0 +1,60 @@
+import csv
+import json
+
+def csv_to_custom_json_with_payload(csv_file_path, json_file_path):
+    # Initialize a dictionary to store the data grouped by server_name
+    result = {}
+
+    # Open the CSV file and read its contents
+    with open(csv_file_path, mode='r') as csv_file:
+        csv_reader = csv.DictReader(csv_file)
+
+        for row in csv_reader:
+            # Extract the server_name
+            server_name = row.get("server_name")
+
+            # Initialize the server_name key in the result if not already present
+            if server_name not in result:
+                result[server_name] = {
+                    "labels": {
+                        "os": row.get("os", "linux"),  # Default value is "linux" if not provided
+                        "kafka_baseconfig": "id",  # Fixed value
+                        "environment": row.get("env_name", "uts"),  # Default to "uts" if missing
+                        "snipetype": "kafka_exporter"  # Fixed value
+                    },
+                    "template_variables": {
+                        "kafka_monitors": []  # Initialize an empty list for kafka monitors
+                    }
+                }
+
+            # Create the payload for this row
+            payload = {
+                "job_name": row.get("job_name"),
+                "target_name": row.get("target_name"),
+                "server_name": server_name,
+                "env_name": row.get("env_name"),
+                "fqdn_name": row.get("fqdn_name"),
+                "component_name": row.get("component_name"),
+                "component_id": int(row.get("component_id", 0)),  # Ensure component_id is an integer
+                "dc": row.get("dc")
+            }
+
+            # Append the payload for every row to kafka_monitors
+            kafka_monitor = payload.copy()  # Create a copy of the payload
+            if row.get("component_name") == "connect":
+                # Add Kafka Connect Cluster ID only for "connect" components
+                kafka_monitor["kafka_connect_cluster_id"] = "Kafka_connect_cluster_id"
+            
+            result[server_name]["template_variables"]["kafka_monitors"].append(kafka_monitor)
+
+    # Write the final result to a JSON file
+    with open(json_file_path, mode='w') as json_file:
+        json.dump(result, json_file, indent=4)
+
+    print(f"CSV data from {csv_file_path} has been converted to JSON format and saved as {json_file_path}.")
+
+
+# Example usage
+csv_file = "input.csv"  # Replace with your actual CSV file path
+json_file = "output.json"  # Replace with your desired output JSON file path
+csv_to_custom_json_with_payload(csv_file, json_file)
