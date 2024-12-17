@@ -1,0 +1,61 @@
+# Define variables
+$ArtifactoryBaseUrl = "https://your-artifactory-url/artifactory" # Replace with your Artifactory URL
+$ApiKey = "YOUR_API_KEY" # Replace with your Artifactory API key
+$Headers = @{ "X-JFrog-Art-Api" = $ApiKey }
+$MetricsFile = "C:\temp\artifactory_file_updates.prom" # Path for Prometheus metrics file
+$LastRunFile = "C:\temp\last_updated_time.json" # Path to store last modified timestamps
+
+# List of repository paths
+$RepoPaths = @(
+    "example-repo/path/to/file1.txt",
+    "example-repo/path/to/file2.txt",
+    "example-repo/path/to/file3.txt"
+)
+
+# Load previously stored timestamps
+if (Test-Path $LastRunFile) {
+    $LastTimestamps = Get-Content $LastRunFile | ConvertFrom-Json
+} else {
+    $LastTimestamps = @{}
+}
+
+# Initialize metrics content
+$MetricsContent = "# HELP artifactory_file_last_updated Unix timestamp of the file's last update.`n"
+$MetricsContent += "# TYPE artifactory_file_last_updated gauge`n"
+
+# Process each repo path
+foreach ($RepoPath in $RepoPaths) {
+    try {
+        # Build API URL and fetch metadata
+        $FileMetadataUrl = "$ArtifactoryBaseUrl/api/storage/$RepoPath"
+        $Response = Invoke-RestMethod -Uri $FileMetadataUrl -Headers $Headers -Method Get
+        $CurrentLastUpdated = $Response.lastModified
+        $LastUpdatedBy = $Response.lastModifiedBy
+        $UnixTimestamp = [int][double]::Parse((Get-Date $CurrentLastUpdated -UFormat %s))
+
+        # Check if the file has been updated
+        if (-not $LastTimestamps.ContainsKey($RepoPath) -or $LastTimestamps.$RepoPath -ne $CurrentLastUpdated) {
+            Write-Host "File Updated: $RepoPath" -ForegroundColor Green
+            Write-Host "Last Updated By: $LastUpdatedBy"
+            Write-Host "Last Updated Time: $CurrentLastUpdated"
+
+            # Update timestamp
+            $LastTimestamps.$RepoPath = $CurrentLastUpdated
+        }
+
+        # Append Prometheus metrics
+        $MetricsContent += "artifactory_file_last_updated{file_path=""$RepoPath"", updated_by=""$LastUpdatedBy""} $UnixTimestamp`n"
+    }
+    catch {
+        Write-Host "Error processing file: $RepoPath" -ForegroundColor Red
+        Write-Host "Details: $_"
+    }
+}
+
+# Save metrics to .prom file
+Set-Content -Path $MetricsFile -Value $MetricsContent
+
+# Save updated timestamps
+$LastTimestamps | ConvertTo-Json | Set-Content -Path $LastRunFile
+
+Write-Host "Metrics file generated: $MetricsFile" -ForegroundColor Cyan
