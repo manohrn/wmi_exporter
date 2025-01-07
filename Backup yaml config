@@ -1,0 +1,46 @@
+import requests
+import yaml
+
+def fetch_and_format_yaml(api_url, username, password):
+    """
+    Fetch YAML data from an API using basic authentication and format it.
+
+    Args:
+        api_url (str): The API endpoint URL.
+        username (str): Username for basic authentication.
+        password (str): Password for basic authentication.
+
+    Returns:
+        str: Human-readable YAML string.
+    """
+    try:
+        # Send GET request with basic authentication
+        response = requests.get(api_url, auth=(username, password))
+        
+        # Raise an exception if the response is not successful
+        response.raise_for_status()
+        
+        # Decode the YAML string (if it's escaped with \n characters)
+        raw_yaml = response.text
+        decoded_yaml = raw_yaml.replace("\\n", "\n")  # Handle escaped newlines
+        
+        # Parse the YAML content
+        yaml_data = yaml.safe_load(decoded_yaml)
+        
+        # Format the YAML data to a human-readable string
+        formatted_yaml = yaml.dump(yaml_data, default_flow_style=False, sort_keys=False, indent=4)
+        
+        return formatted_yaml
+    except requests.exceptions.RequestException as e:
+        return f"HTTP Request failed: {e}"
+    except yaml.YAMLError as e:
+        return f"Error parsing YAML: {e}"
+
+# Example usage
+if __name__ == "__main__":
+    api_url = "https://example.com/api/data"  # Replace with your API URL
+    username = "your_username"               # Replace with your username
+    password = "your_password"               # Replace with your password
+    
+    formatted_yaml = fetch_and_format_yaml(api_url, username, password)
+    print(formatted_yaml)
