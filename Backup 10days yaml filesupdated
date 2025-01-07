@@ -1,0 +1,135 @@
+import os
+import requests
+import yaml
+from difflib import unified_diff
+from datetime import datetime, timedelta
+import logging
+
+# Directory to store backups
+BACKUP_DIR = "./yaml_backups"
+
+# Logging configuration
+LOG_FILE = "./backup_log.log"
+logging.basicConfig(filename=LOG_FILE, level=logging.INFO, 
+                    format="%(asctime)s - %(levelname)s - %(message)s")
+
+def fetch_yaml(api_url, username, password):
+    """
+    Fetch YAML data from an API using basic authentication.
+
+    Args:
+        api_url (str): The API endpoint URL.
+        username (str): Username for basic authentication.
+        password (str): Password for basic authentication.
+
+    Returns:
+        str: Raw YAML string.
+    """
+    try:
+        # Send GET request with basic authentication
+        response = requests.get(api_url, auth=(username, password))
+        
+        # Raise an exception if the response is not successful
+        response.raise_for_status()
+        
+        # Decode the YAML string (if it's escaped with \n characters)
+        raw_yaml = response.text
+        decoded_yaml = raw_yaml.replace("\\n", "\n")  # Handle escaped newlines
+        
+        return decoded_yaml
+    except requests.exceptions.RequestException as e:
+        logging.error(f"HTTP Request failed: {e}")
+        return None
+
+def save_yaml_to_file(yaml_data, filename):
+    """
+    Save YAML data to a file.
+
+    Args:
+        yaml_data (str): YAML string to save.
+        filename (str): File path to save the YAML data.
+    """
+    with open(filename, "w") as file:
+        file.write(yaml_data)
+
+def compare_yaml_files(file1, file2):
+    """
+    Compare two YAML files and report differences.
+
+    Args:
+        file1 (str): Path to the first YAML file.
+        file2 (str): Path to the second YAML file.
+
+    Returns:
+        str: A unified diff string showing the differences.
+    """
+    with open(file1, "r") as f1, open(file2, "r") as f2:
+        file1_content = f1.readlines()
+        file2_content = f2.readlines()
+    
+    # Generate unified diff
+    diff = unified_diff(file1_content, file2_content, fromfile=file1, tofile=file2, lineterm="")
+    return "\n".join(diff)
+
+def cleanup_old_backups(directory, days_to_keep=10):
+    """
+    Remove backups older than a specified number of days.
+
+    Args:
+        directory (str): Directory containing backup files.
+        days_to_keep (int): Number of days to retain backups.
+    """
+    cutoff_time = datetime.now() - timedelta(days=days_to_keep)
+    for file in os.listdir(directory):
+        file_path = os.path.join(directory, file)
+        if os.path.isfile(file_path):
+            file_mtime = datetime.fromtimestamp(os.path.getmtime(file_path))
+            if file_mtime < cutoff_time:
+                os.remove(file_path)
+                logging.info(f"Deleted old backup: {file_path}")
+
+def main():
+    # API details
+    api_url = "https://example.com/api/data"  # Replace with your API URL
+    username = "your_username"               # Replace with your username
+    password = "your_password"               # Replace with your password
+    
+    # Create backup directory if it doesn't exist
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+
+    # Fetch the YAML data
+    yaml_data = fetch_yaml(api_url, username, password)
+    if yaml_data is None:
+        logging.error("Failed to fetch YAML data. Exiting.")
+        return
+    
+    # Create a timestamped filename for the backup
+    current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+    current_file = os.path.join(BACKUP_DIR, f"backup_{current_time}.yaml")
+    
+    # Save the fetched YAML data to a file
+    save_yaml_to_file(yaml_data, current_file)
+    logging.info(f"Backup saved to {current_file}")
+
+    # Clean up backups older than 10 days
+    cleanup_old_backups(BACKUP_DIR, days_to_keep=10)
+
+    # Check for the last two backups
+    backups = sorted([os.path.join(BACKUP_DIR, f) for f in os.listdir(BACKUP_DIR) if f.endswith(".yaml")])
+    if len(backups) > 1:  # Ensure we have at least two backups to compare
+        last_backup = backups[-2]  # Second last file
+        current_backup = backups[-1]  # Latest file
+        logging.info(f"Comparing {last_backup} with {current_backup}...")
+
+        # Compare the last two files
+        diff = compare_yaml_files(last_backup, current_backup)
+        if diff:
+            logging.info("Differences found between the last two backups:")
+            logging.info(diff)
+        else:
+            logging.info("No differences found between the last two backups.")
+    else:
+        logging.info("Not enough backups to compare. Skipping comparison.")
+
+if __name__ == "__main__":
+    main()
