@@ -1,0 +1,186 @@
+To collect all platform metrics from ThousandEyes for monitoring purposes, follow this comprehensive guide:
+
+1. Understand ThousandEyes Platform Metrics
+
+ThousandEyes provides platform metrics through their API for various components:
+	•	Test Metrics: Includes performance data (latency, jitter, loss, etc.).
+	•	Agent Metrics: Information about ThousandEyes agents.
+	•	Network Metrics: Data on network performance.
+	•	Alert Metrics: Details on active and historical alerts.
+	•	Endpoint Metrics: Metrics from endpoint agents (e.g., client performance).
+
+Refer to the ThousandEyes API documentation for the full list of available metrics and endpoints.
+
+2. Identify API Endpoints
+
+Key API endpoints for collecting platform metrics:
+	1.	Tests:
+	•	Endpoint: /tests.json
+	•	Description: Lists all tests.
+	•	Example: https://api.thousandeyes.com/v6/tests.json
+	2.	Network Metrics:
+	•	Endpoint: /net/metrics.json
+	•	Description: Provides metrics like latency, loss, and jitter for network tests.
+	•	Example: https://api.thousandeyes.com/v6/net/metrics.json
+	3.	Agents:
+	•	Endpoint: /agents.json
+	•	Description: Lists all agents and their statuses.
+	•	Example: https://api.thousandeyes.com/v6/agents.json
+	4.	Alerts:
+	•	Endpoint: /alerts.json
+	•	Description: Active and historical alerts.
+	•	Example: https://api.thousandeyes.com/v6/alerts.json
+	5.	Endpoint Data:
+	•	Endpoint: /endpoint-data.json
+	•	Description: Metrics from endpoint agents (e.g., browser and device performance).
+	•	Example: https://api.thousandeyes.com/v6/endpoint-data.json
+
+3. Implement API Integration
+
+To collect all platform metrics, you need to query the API for each endpoint and expose them for Prometheus.
+
+Example Python Exporter to Collect All Metrics:
+
+from flask import Flask, Response
+import requests
+
+# Configuration
+BASE_API_URL = "https://api.thousandeyes.com/v6/"
+API_TOKEN = "<your_api_token>"
+EXPORTER_PORT = 9000
+
+app = Flask(__name__)
+
+def fetch_metrics(endpoint):
+    """
+    Fetch metrics from a specific ThousandEyes API endpoint.
+    """
+    headers = {"Authorization": f"Bearer {API_TOKEN}"}
+    response = requests.get(BASE_API_URL + endpoint, headers=headers)
+    
+    if response.status_code != 200:
+        raise Exception(f"Failed to fetch {endpoint}: {response.status_code} {response.text}")
+    
+    return response.json()
+
+def collect_platform_metrics():
+    """
+    Collect all platform metrics and convert them to Prometheus format.
+    """
+    metrics = []
+
+    # Fetch tests and test metrics
+    tests = fetch_metrics("tests.json").get("test", [])
+    for test in tests:
+        test_id = test["testId"]
+        test_name = test["testName"]
+        metrics.append(f'thousandeyes_test_info{{test_id="{test_id}", test_name="{test_name}"}} 1')
+
+    # Fetch network metrics
+    net_metrics = fetch_metrics("net/metrics.json").get("metrics", [])
+    for metric in net_metrics:
+        test_id = metric["testId"]
+        loss = metric["loss"]
+        latency = metric["latency"]
+        jitter = metric["jitter"]
+        metrics.append(f'thousandeyes_loss{{test_id="{test_id}"}} {loss}')
+        metrics.append(f'thousandeyes_latency{{test_id="{test_id}"}} {latency}')
+        metrics.append(f'thousandeyes_jitter{{test_id="{test_id}"}} {jitter}')
+
+    # Fetch agents
+    agents = fetch_metrics("agents.json").get("agents", [])
+    for agent in agents:
+        agent_id = agent["agentId"]
+        agent_name = agent["agentName"]
+        agent_status = 1 if agent["enabled"] else 0
+        metrics.append(f'thousandeyes_agent_status{{agent_id="{agent_id}", agent_name="{agent_name}"}} {agent_status}')
+
+    # Fetch alerts
+    alerts = fetch_metrics("alerts.json").get("alert", [])
+    for alert in alerts:
+        alert_id = alert["alertId"]
+        test_id = alert["testId"]
+        metrics.append(f'thousandeyes_active_alerts{{alert_id="{alert_id}", test_id="{test_id}"}} 1')
+
+    return "\n".join(metrics)
+
+@app.route('/metrics')
+def metrics():
+    """
+    Expose ThousandEyes metrics in Prometheus format.
+    """
+    try:
+        metrics_data = collect_platform_metrics()
+        return Response(metrics_data, mimetype="text/plain")
+    except Exception as e:
+        return Response(f"# Error: {str(e)}", status=500, mimetype="text/plain")
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=EXPORTER_PORT)
+
+4. Prometheus Configuration
+
+Add the ThousandEyes exporter to your Prometheus configuration (prometheus.yml):
+
+scrape_configs:
+  - job_name: 'thousandeyes'
+    static_configs:
+      - targets: ['<exporter_host>:9000']  # Replace with the exporter host and port
+
+5. Key Metrics Exposed
+	1.	Test Information:
+	•	thousandeyes_test_info: Metadata about tests.
+	2.	Network Metrics:
+	•	thousandeyes_loss: Packet loss for each test.
+	•	thousandeyes_latency: Latency for each test.
+	•	thousandeyes_jitter: Jitter for each test.
+	3.	Agent Metrics:
+	•	thousandeyes_agent_status: Status of agents (1 = enabled, 0 = disabled).
+	4.	Alert Metrics:
+	•	thousandeyes_active_alerts: Active alerts for each test.
+
+6. Visualize Metrics in Grafana
+	1.	Add Prometheus as a data source in Grafana.
+	2.	Create dashboards with PromQL queries:
+	•	Active alerts:
+
+sum(thousandeyes_active_alerts)
+
+
+	•	Packet loss per test:
+
+thousandeyes_loss
+
+
+	•	Agent statuses:
+
+thousandeyes_agent_status
+
+7. Scale and Automate
+	1.	Dockerize Exporter:
+Create a Dockerfile:
+
+FROM python:3.9
+WORKDIR /app
+COPY thousandeyes_exporter.py /app/
+RUN pip install flask requests
+CMD ["python", "thousandeyes_exporter.py"]
+
+Build and run:
+
+docker build -t thousandeyes-exporter .
+docker run -d -p 9000:9000 thousandeyes-exporter
+
+
+	2.	Kubernetes:
+Deploy the exporter as a pod and expose it as a service for Prometheus to scrape.
+
+8. Retention Policy and Alerts
+	1.	Set Prometheus’ retention policy to store metrics for a desired duration:
+
+--storage.tsdb.retention.time=30d
+
+
+	2.	Configure alerts in Prometheus for critical metrics like high latency or active alerts.
+
+By integrating ThousandEyes platform metrics into Prometheus, you can monitor network health, agent performance, and alert statuses effectively. Let me know if you need help with specific integrations!
