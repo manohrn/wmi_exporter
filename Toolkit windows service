@@ -1,0 +1,38 @@
+# Define service details
+$ServiceName = "PythonScriptService"  # Name of the Windows service
+$ServiceDisplayName = "Python Script Service"  # Display name of the service
+$ServiceDescription = "A service to run a Python script."  # Description of the service
+$PythonPath = "C:\path\to\python.exe"  # Path to the Python interpreter
+$ScriptPath = "C:\path\to\your_script.py"  # Path to your Python script
+$ServiceExePath = "$PythonPath $ScriptPath"  # Command to execute the script
+$LogonAccount = "NT AUTHORITY\LocalService"  # Service account
+$ServiceType = "Win32OwnProcess"  # Service type
+
+# Check if the service already exists
+if (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) {
+    Write-Host "Service '$ServiceName' already exists. Removing it..."
+    Stop-Service -Name $ServiceName -Force
+    Remove-Service -Name $ServiceName
+    Write-Host "Existing service removed."
+}
+
+# Create the service
+Write-Host "Creating the service '$ServiceName'..."
+New-Service -Name $ServiceName `
+            -DisplayName $ServiceDisplayName `
+            -Description $ServiceDescription `
+            -BinaryPathName "`"$PythonPath`" `"$ScriptPath`"" `
+            -StartupType Automatic `
+            -Credential (New-Object System.Management.Automation.PSCredential `
+                -ArgumentList $LogonAccount, (ConvertTo-SecureString -String "password" -AsPlainText -Force))
+
+Write-Host "Service '$ServiceName' created successfully."
+
+# Start the service
+Write-Host "Starting the service..."
+Start-Service -Name $ServiceName
+Write-Host "Service '$ServiceName' started successfully."
+
+# Verify the service
+Write-Host "Verifying the service..."
+Get-Service -Name $ServiceName
