@@ -1,0 +1,82 @@
+import os
+import requests
+
+
+def fetch_and_save_yaml(api_url, username, password, output_path):
+    """
+    Fetch YAML data from an API using basic authentication and save it directly to a file.
+
+    Args:
+        api_url (str): The API endpoint URL.
+        username (str): Username for basic authentication.
+        password (str): Password for basic authentication.
+        output_path (str): Path to save the YAML file.
+    """
+    try:
+        # Send GET request with basic authentication
+        response = requests.get(api_url, auth=(username, password))
+
+        # Raise an exception if the response is not successful
+        response.raise_for_status()
+
+        # Save the content directly to the file
+        with open(output_path, "w") as file:
+            file.write(response.text)
+
+        print(f"File saved successfully at: {output_path}")
+    except requests.exceptions.RequestException as e:
+        print(f"HTTP Request failed: {e}")
+    except Exception as e:
+        print(f"Error saving file: {e}")
+
+
+def process_namespaces(api_url, username, password, base_dir):
+    """
+    Fetch YAML files for namespaces from an API and save them to specific files.
+
+    Args:
+        api_url (str): Base API URL to fetch namespaces.
+        username (str): Username for basic authentication.
+        password (str): Password for basic authentication.
+        base_dir (str): Base directory to store namespace files.
+    """
+    try:
+        # Fetch namespace list
+        response = requests.get(api_url, auth=(username, password))
+        response.raise_for_status()
+
+        namespaces_data = response.json()  # Assuming the API returns JSON for namespace list
+
+        if "namespaces" not in namespaces_data:
+            print("Failed to fetch namespace list or invalid response format.")
+            return
+
+        # Iterate over namespaces and process each one
+        for namespace in namespaces_data["namespaces"]:
+            namespace_name = namespace.get("name")
+            if not namespace_name:
+                continue
+
+            # Define the output file path
+            namespace_dir = os.path.join(base_dir, namespace_name)
+            os.makedirs(namespace_dir, exist_ok=True)
+            output_file_path = os.path.join(namespace_dir, f"{namespace_name}_config.yaml")
+
+            # Fetch the config for each namespace
+            namespace_config_url = f"{api_url}/{namespace_name}/config"  # Adjust API endpoint as needed
+            fetch_and_save_yaml(namespace_config_url, username, password, output_file_path)
+
+    except requests.exceptions.RequestException as e:
+        print(f"HTTP Request failed: {e}")
+    except Exception as e:
+        print(f"Error processing namespaces: {e}")
+
+
+if __name__ == "__main__":
+    # API details
+    base_api_url = "https://example.com/api/namespaces"  # Replace with your API base URL
+    username = "your_username"                          # Replace with your username
+    password = "your_password"                          # Replace with your password
+    output_base_dir = "./namespace_configs"             # Base directory to store namespace files
+
+    process_namespaces(base_api_url, username, password, output_base_dir)
