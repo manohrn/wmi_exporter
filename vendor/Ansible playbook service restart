@@ -1,0 +1,30 @@
+---
+- name: Restart and Validate Windows Service
+  hosts: windows
+  tasks:
+    - name: Restart the Windows service
+      win_service:
+        name: "{{ service_name }}"
+        state: restarted
+
+    - name: Wait for the service to start
+      win_service:
+        name: "{{ service_name }}"
+        state: started
+      retries: 5  # Number of retries to check the service status
+      delay: 10   # Wait 10 seconds between retries
+      register: service_status
+
+    - name: Validate the service is running
+      win_service_info:
+        name: "{{ service_name }}"
+      register: service_info
+
+    - name: Fail if the service did not start
+      fail:
+        msg: "The service {{ service_name }} did not start successfully."
+      when: service_info.state != "running"
+
+    - name: Debug service status
+      debug:
+        msg: "The service {{ service_name }} is running successfully!"
