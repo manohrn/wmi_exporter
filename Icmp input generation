@@ -1,0 +1,40 @@
+import csv
+import yaml
+
+# Function to control the order of fields in the YAML
+class OrderedDumper(yaml.Dumper):
+    def increase_indent(self, flow=False, indentless=False):
+        return super(OrderedDumper, self).increase_indent(flow, False)
+
+# Function to generate the YAML configuration
+def generate_yaml_from_csv(csv_file, output_yaml):
+    with open(csv_file, 'r') as file:
+        csv_reader = csv.DictReader(file)
+        targets = []
+        counter = 1  # Start the dynamic naming counter
+
+        for row in csv_reader:
+            dynamic_name = f"icmp{counter}"  # Generate the name dynamically
+            target = {
+                "targets": [row["endpoint"]],
+                "labels": {
+                    "name": dynamic_name,
+                    "module": "icmp",  # Hardcoded value
+                    "env": row["env"],
+                    "endpoint": row["endpoint"]
+                }
+            }
+            targets.append(target)
+            counter += 1  # Increment the counter for the next target
+
+    # Write to a YAML file with controlled order
+    with open(output_yaml, 'w') as yaml_file:
+        yaml.dump(targets, yaml_file, Dumper=OrderedDumper, default_flow_style=False)
+
+    print(f"YAML configuration generated in {output_yaml}")
+
+# Input CSV file path and output YAML file path
+csv_file = "servers.csv"  # Replace with the path to your CSV file
+output_yaml = "config.yaml"  # Replace with your desired output YAML file name
+
+generate_yaml_from_csv(csv_file, output_yaml)
