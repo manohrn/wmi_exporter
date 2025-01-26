@@ -1,0 +1,71 @@
+import yaml
+import os
+import csv
+
+# Path to the CSV file containing server names
+csv_file = "servers.csv"
+
+# Number of Grafana Agents
+num_agents = 5
+
+# Output directory for generated configs
+output_dir = "./configs/"
+os.makedirs(output_dir, exist_ok=True)
+
+# Read server names from the CSV file
+with open(csv_file, "r") as f:
+    reader = csv.reader(f)
+    servers = [row[0] for row in reader]  # Assuming the server names are in the first column
+
+# Total number of servers
+num_servers = len(servers)
+
+# Calculate targets per agent
+servers_per_agent = num_servers // num_agents
+remaining_servers = num_servers % num_agents
+
+# Generate configurations for each agent
+for agent_id in range(num_agents):
+    start = agent_id * servers_per_agent
+    end = start + servers_per_agent
+    
+    # Handle remaining servers
+    if agent_id == num_agents - 1:
+        end += remaining_servers
+
+    # Generate blackbox targets for this agent
+    blackbox_targets = [
+        {
+            "name": f"icmp_check_server{i+1}",
+            "address": servers[i],
+            "module": "icmp"
+        }
+        for i in range(start, end)
+    ]
+
+    # Create the configuration for this agent
+    config = {
+        "integrations": {
+            "blackbox": {
+                "enabled": True,
+                "blackbox_targets": blackbox_targets,
+                "blackbox_config": {
+                    "modules": {
+                        "icmp": {
+                            "prober": "icmp",
+                            "timeout": "5s",
+                        }
+                    }
+                },
+            }
+        }
+    }
+
+    # Save the configuration to a file
+    config_file = os.path.join(output_dir, f"agent_config_{agent_id + 1}.yaml")
+    with open(config_file, "w") as f:
+        yaml.dump(config, f, default_flow_style=False)
+
+    print(f"Configuration for Agent {agent_id + 1} generated: {config_file}")
+
+print(f"Generated {num_agents} agent configurations in '{output_dir}' directory!")
