@@ -1,0 +1,134 @@
+Here’s an optimized OpenTelemetry Collector configuration for Windows host metrics only (without logs). This config is designed to efficiently collect and send host metrics to Splunk Observability Cloud with enhanced metadata, filtering, and optimized performance.
+
+🚀 Optimized Windows Metrics-Only Configuration
+
+receivers:
+  hostmetrics:
+    collection_interval: 30s  # Collect metrics every 30 seconds
+    scrapers:
+      cpu:
+        metrics:
+          system.cpu.utilization:
+            enabled: true  # Enable CPU utilization metric
+      disk:
+        metrics:
+          system.disk.io:
+            enabled: true  # Enable disk I/O monitoring
+      filesystem:
+      memory:
+      network:
+      paging:
+      processes:
+
+processors:
+  batch:
+    send_batch_size: 200
+    timeout: 10s  # Send batches every 10 seconds
+
+  memory_limiter:
+    limit_mib: 512  # Limit memory usage to 512MB
+    spike_limit_mib: 128
+
+  filter:
+    metrics:
+      exclude:
+        match_type: strict
+        metric_names:
+          - "system.disk.inodes.usage"  # Exclude unnecessary inodes metric for Windows
+          - "system.network.packets.drop"  # Reduce noise
+
+  resource:
+    attributes:
+      - key: host.name
+        from_attribute: host.name
+      - key: environment
+        value: "production"
+      - key: os.type
+        from_attribute: os.type
+      - key: os.version
+        from_attribute: os.version
+      - key: datacenter
+        value: "DC-East"  # Custom attribute for grouping hosts
+
+exporters:
+  signalfx:
+    access_token: "<YOUR_ACCESS_TOKEN>"
+    realm: "us1"  # Change to your Splunk Observability realm (e.g., us0, eu0)
+    metrics:
+      translation_rules: []
+
+service:
+  pipelines:
+    metrics:
+      receivers: [hostmetrics]
+      processors: [batch, memory_limiter, filter, resource]
+      exporters: [signalfx]
+
+🔹 Key Features & Enhancements
+
+1️⃣ Focused on Host Metrics Only
+	•	Removes logs (windows_event_log & filelog receivers are removed).
+	•	Keeps only system performance metrics (CPU, Memory, Disk, Network, etc.).
+
+2️⃣ Optimized Data Collection
+	•	Collection interval set to 30s for near real-time monitoring.
+	•	Batch sending every 10s or 200 records for efficiency.
+	•	Memory limiter (512MB) to prevent excessive memory use.
+
+3️⃣ Intelligent Metric Filtering
+	•	Excludes unnecessary metrics (e.g., system.disk.inodes.usage for Windows).
+	•	Retains key performance metrics like:
+	•	CPU utilization
+	•	Memory usage
+	•	Disk I/O
+	•	Network activity
+	•	Process counts
+
+4️⃣ Enhanced Metadata for Better Context
+	•	Adds useful labels (resource processor):
+	•	host.name: Identifies the hostname.
+	•	environment: Marks as “production”.
+	•	os.type & os.version: Provides OS details.
+	•	datacenter: Custom grouping tag (modify as needed).
+
+5️⃣ Direct Export to Splunk Observability
+	•	Uses signalfx exporter for Splunk Observability Cloud.
+	•	Requires:
+	•	access_token: Your Splunk Observability access token.
+	•	realm: Your Splunk region (e.g., us0, us1, eu0).
+
+📌 Deployment Steps
+
+Step 1: Install the Collector
+	•	Follow Splunk OpenTelemetry Collector for Windows installation guide.
+	•	Save this config as:
+
+C:\Program Files\Splunk\OpenTelemetry Collector\agent_config.yaml
+
+
+
+Step 2: Configure Access Token & Realm
+	•	Replace <YOUR_ACCESS_TOKEN> with your Splunk Observability Cloud token.
+	•	Update realm: "us1" to match your region (e.g., us0, eu0).
+
+Step 3: Restart the Collector
+
+net stop splunk-otel-collector
+net start splunk-otel-collector
+
+Step 4: Verify Metrics in Splunk
+	•	Log in to Splunk Observability Cloud.
+	•	Go to Infrastructure or Metrics Explorer.
+	•	Search for metrics like system.cpu.utilization.
+
+🎯 Why Use This Config?
+
+✅ Focused on Metrics → No extra log processing, just system performance data.
+✅ Efficient Data Collection → Batched sending, 30s interval for real-time insights.
+✅ Reduced Noise → Filters out unnecessary system metrics.
+✅ Better Context → Adds host metadata for better filtering in Splunk.
+✅ Optimized Performance → Prevents excessive resource usage.
+
+This config ensures clean, efficient, and structured telemetry data is sent to Splunk Observability Cloud without extra logs.
+
+Let me know if you need further customizations! 🚀
