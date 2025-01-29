@@ -1,0 +1,76 @@
+receivers:
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: 'node_exporter'
+          scrape_interval: 30s  # Scrape metrics every 30 seconds
+          static_configs:
+            - targets: ['localhost:9100']  # Node Exporter runs on port 9100
+          metric_relabel_configs:
+            - source_labels: [__name__]
+              regex: 'node_.*'
+              action: keep  # Only collect Node Exporter metrics
+
+processors:
+  batch:
+    send_batch_size: 200
+    timeout: 10s  # Batch data every 10 seconds for efficiency
+
+  memory_limiter:
+    limit_mib: 512  # Limit memory usage to 512MB
+    spike_limit_mib: 128
+
+  resource:
+    attributes:
+      - key: host.name
+        from_attribute: host.name
+      - key: environment
+        value: "production"
+      - key: os.type
+        from_attribute: os.type
+      - key: os.version
+        from_attribute: os.version
+      - key: datacenter
+        value: "DC-West"  # Custom tag for data center
+
+exporters:
+  signalfx:
+    access_token: "<YOUR_ACCESS_TOKEN>"  # Splunk Observability Cloud token
+    realm: "us1"  # Change this to your realm (e.g., us0, us1, eu0)
+
+service:
+  pipelines:
+    metrics:
+      receivers: [prometheus]
+      processors: [batch, memory_limiter, resource]
+      exporters: [signalfx]
+
+
+
+ How This Works
+	1.	Prometheus Receiver (prometheus):
+	•	Scrapes Node Exporter metrics from localhost:9100.
+	•	Filters metrics only starting with node_ (e.g., node_cpu_seconds_total, node_memory_MemTotal_bytes).
+	•	Scrapes every 30 seconds.
+	2.	Processors:
+	•	Batch: Groups data into batches (200 metrics or every 10 seconds).
+	•	Memory Limiter: Prevents excessive resource usage.
+	•	Resource Processor: Adds metadata (host name, OS, environment, datacenter).
+	3.	Exporter (signalfx):
+	•	Sends the collected Node Exporter metrics to Splunk Observability Cloud.
+	•	Uses the access token for authentication and realm for correct routing.
+
+Here is the flow diagram illustrating how Prometheus Node Exporter metrics are collected, processed, and sent to Splunk Observability Cloud via the OpenTelemetry Collector.
+
+Flow Explanation:
+	1.	Node Exporter collects system metrics (CPU, Memory, Disk, Network).
+	2.	Prometheus Receiver (OTel Collector) scrapes metrics from port 9100.
+	3.	Processors (OTel Collector) filter, batch, and enrich metrics with metadata.
+	4.	Signalfx Exporter (OTel Collector) sends the processed metrics to Splunk Observability Cloud.
+	5.	Splunk Observability Cloud stores and visualizes the data for analysis.
+
+This setup ensures efficient system monitoring with structured Prometheus metrics ingestion into Splunk.
+
+Let me know if you need modifications or a high-resolution version for your management submission! 🚀 ￼
+
+
