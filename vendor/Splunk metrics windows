@@ -1,0 +1,37 @@
+receivers:
+  hostmetrics:
+    collection_interval: 60s  # Collect metrics every 60 seconds
+    scrapers:
+      cpu:              # Collect CPU usage metrics
+      disk:             # Collect disk usage and I/O metrics
+      filesystem:       # Collect filesystem usage (e.g., drive space)
+      memory:           # Collect memory usage metrics
+      network:          # Collect network activity (e.g., bandwidth usage)
+      paging:           # Collect paging (swap) metrics
+      processes:        # Collect process counts and states
+
+processors:
+  batch:               # Batch metrics to optimize sending to the exporter
+  memory_limiter:      # Prevent excessive memory usage by the collector
+    limit_mib: 400
+    spike_limit_mib: 100
+  resource:
+    attributes:
+      - key: host.name
+        from_attribute: host.name  # Adds the hostname to metrics
+      - key: environment
+        value: "production"        # Add an environment tag (customize as needed)
+
+exporters:
+  signalfx:
+    access_token: "<YOUR_ACCESS_TOKEN>"  # Replace with your Splunk Observability Cloud access token
+    realm: "us1"                         # Replace with your SignalFx realm (e.g., us0, us1, eu0, etc.)
+    metrics:
+      translation_rules: []              # Optional: Define custom metric translations if needed
+
+service:
+  pipelines:
+    metrics:
+      receivers: [hostmetrics]          # Use the hostmetrics receiver for metrics
+      processors: [batch, memory_limiter, resource]
+      exporters: [signalfx]             # Export to Splunk Observability Cloud
