@@ -1,0 +1,29 @@
+receivers:
+  hostmetrics:
+    collection_interval: 30s
+    scrapers:
+      cpu:
+      disk:
+      filesystem:
+      memory:
+      network:
+      paging:
+      processes:
+
+processors:
+  batch:
+    send_batch_size: 200
+    timeout: 10s
+
+exporters:
+  prometheusremotewrite:
+    endpoint: "http://your-prometheus-server:9090/api/v1/write"
+    resource_to_telemetry_conversion:
+      enabled: true  # ✅ Converts OpenTelemetry resource attributes into Prometheus labels
+
+service:
+  pipelines:
+    metrics:
+      receivers: [hostmetrics]
+      processors: [batch]
+      exporters: [prometheusremotewrite]
