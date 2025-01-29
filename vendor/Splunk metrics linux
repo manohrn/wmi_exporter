@@ -1,0 +1,137 @@
+Here’s an optimized OpenTelemetry Collector configuration for Linux host metrics only (without logs). This configuration collects Linux system performance metrics and exports them to Splunk Observability Cloud. It is tailored for efficiency, filtering, and metadata enrichment, focusing solely on metrics.
+
+🚀 Optimized Linux Metrics-Only Configuration
+
+receivers:
+  hostmetrics:
+    collection_interval: 30s  # Collect metrics every 30 seconds
+    scrapers:
+      cpu:
+        metrics:
+          system.cpu.utilization:
+            enabled: true  # Enable CPU utilization metric
+      disk:
+        metrics:
+          system.disk.io:
+            enabled: true  # Enable disk I/O monitoring
+      filesystem:
+      memory:
+      network:
+      paging:
+      processes:
+
+processors:
+  batch:
+    send_batch_size: 200
+    timeout: 10s  # Send batches every 10 seconds
+
+  memory_limiter:
+    limit_mib: 512  # Limit memory usage to 512MB
+    spike_limit_mib: 128
+
+  filter:
+    metrics:
+      exclude:
+        match_type: strict
+        metric_names:
+          - "system.disk.inodes.usage"  # Exclude unnecessary inode metrics
+          - "system.network.packets.drop"  # Reduce noise for dropped packets
+
+  resource:
+    attributes:
+      - key: host.name
+        from_attribute: host.name
+      - key: environment
+        value: "production"
+      - key: os.type
+        from_attribute: os.type
+      - key: os.version
+        from_attribute: os.version
+      - key: datacenter
+        value: "DC-North"  # Custom attribute for grouping hosts
+
+exporters:
+  signalfx:
+    access_token: "<YOUR_ACCESS_TOKEN>"  # Splunk Observability Cloud token
+    realm: "us1"  # Change to your SignalFx realm (e.g., us0, us1, eu0)
+    metrics:
+      translation_rules: []
+
+service:
+  pipelines:
+    metrics:
+      receivers: [hostmetrics]
+      processors: [batch, memory_limiter, filter, resource]
+      exporters: [signalfx]
+
+🔹 Key Features & Enhancements
+
+1️⃣ Metrics-Only Focus
+	•	Hostmetrics receiver:
+	•	Collects Linux system metrics only (no logs or traces).
+	•	Captures key performance metrics:
+	•	CPU: Tracks CPU utilization.
+	•	Memory: Tracks RAM usage.
+	•	Disk: Monitors disk I/O and usage.
+	•	Filesystem: Reports storage space availability.
+	•	Network: Tracks data sent/received over network interfaces.
+	•	Processes: Counts running processes and their states.
+
+2️⃣ Optimized Performance
+	•	Collection interval: Set to 30 seconds for near real-time monitoring.
+	•	Batch processor:
+	•	Groups metrics into batches of 200 records or sends data every 10 seconds.
+	•	Memory limiter:
+	•	Limits Collector’s memory usage to 512MB, with a spike limit of 128MB.
+
+3️⃣ Advanced Metric Filtering
+	•	Exclude unnecessary metrics to reduce noise and focus on important data:
+	•	Excludes metrics like:
+	•	system.disk.inodes.usage: Not as relevant for monitoring Linux hosts.
+	•	system.network.packets.drop: Reduces noise for dropped packets.
+
+4️⃣ Enhanced Metadata for Context
+	•	Adds host-specific metadata using the resource processor:
+	•	host.name: Identifies the hostname.
+	•	os.type & os.version: Provides OS details (e.g., Linux kernel version).
+	•	environment: Tags the host as part of the “production” environment.
+	•	datacenter: A custom attribute for grouping Linux hosts (e.g., “DC-North”).
+
+5️⃣ Exporter to Splunk Observability
+	•	Uses Signalfx exporter to send metrics to Splunk Observability Cloud.
+	•	Requires:
+	•	access_token: Your Splunk Observability token.
+	•	realm: Your SignalFx realm (e.g., us0, us1, eu0).
+
+📌 Deployment Steps
+
+Step 1: Install the Collector
+	•	Install the Splunk OpenTelemetry Collector for Linux:
+	•	Follow the installation guide.
+	•	Save the above configuration to:
+
+/etc/otel/collector/agent_config.yaml
+
+
+
+Step 2: Configure Access Token & Realm
+	•	Replace <YOUR_ACCESS_TOKEN> with your Splunk Observability Cloud token.
+	•	Update realm: "us1" to match your region (e.g., us0, eu0).
+
+Step 3: Restart the Collector
+
+sudo systemctl restart splunk-otel-collector
+
+Step 4: Verify Metrics in Splunk
+	•	Log in to Splunk Observability Cloud.
+	•	Go to Infrastructure or Metrics Explorer.
+	•	Search for metrics like system.cpu.utilization or system.memory.usage.
+
+🎯 Why Use This Configuration?
+
+✅ Focused on Metrics → Collects essential performance data without logs or traces.
+✅ Efficient → Filters out irrelevant metrics, optimizes memory usage, and batches data.
+✅ Custom Metadata → Adds context (e.g., environment, datacenter) for better filtering in Splunk.
+✅ Real-Time Insights → Reduced collection interval (30 seconds) for timely updates.
+
+This configuration ensures efficient Linux host monitoring and seamless integration with Splunk Observability Cloud. Let me know if you need further enhancements or specific metrics included! 🚀
