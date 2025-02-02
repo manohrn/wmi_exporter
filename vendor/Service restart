@@ -1,0 +1,46 @@
+# Define variables
+$ServiceName = "YourServiceName"  # Replace with your service name
+$Endpoint = "http://your-endpoint/health"  # Replace with the actual endpoint
+
+# Stop the service
+Write-Host "Stopping service: $ServiceName..."
+Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 5
+
+# Update service start timeout in registry (set to 60 seconds)
+$RegPath = "HKLM:\SYSTEM\CurrentControlSet\Control"
+$ValueName = "ServicesPipeTimeout"
+$NewTimeout = 60000  # 60 seconds in milliseconds
+
+# Check if the value exists, then update or create it
+if (Test-Path $RegPath) {
+    $CurrentTimeout = Get-ItemProperty -Path $RegPath -Name $ValueName -ErrorAction SilentlyContinue
+    if ($CurrentTimeout) {
+        Set-ItemProperty -Path $RegPath -Name $ValueName -Value $NewTimeout
+        Write-Host "Updated service start timeout to 60 seconds."
+    } else {
+        New-ItemProperty -Path $RegPath -Name $ValueName -PropertyType DWord -Value $NewTimeout
+        Write-Host "Created and set service start timeout to 60 seconds."
+    }
+}
+
+# Start the service
+Write-Host "Starting service: $ServiceName..."
+Start-Service -Name $ServiceName
+Start-Sleep -Seconds 5  # Wait for service to initialize
+
+# Get service status
+$ServiceStatus = Get-Service -Name $ServiceName
+Write-Host "Service status: $($ServiceStatus.Status)"
+
+# Check the endpoint health
+try {
+    $Response = Invoke-WebRequest -Uri $Endpoint -UseBasicParsing
+    if ($Response.StatusCode -eq 200) {
+        Write-Host "Service is healthy. Endpoint returned HTTP 200."
+    } else {
+        Write-Host "Service might be unhealthy. Endpoint returned HTTP $($Response.StatusCode)."
+    }
+} catch {
+    Write-Host "Failed to reach endpoint: $_"
+}
