@@ -1,0 +1,4 @@
+curl -X POST "https://ingest.<realm>.signalfx.com/v2/datapoint" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Splunk YOUR_ACCESS_TOKEN" \
+  -d '{"gauge": [{"metric":"test.metric","value":1}]}'
