@@ -1,0 +1,35 @@
+receivers:
+  windowsperfcounters:
+    perfcounters:
+      - object: "Service"
+        instances: ["*"]  # Monitors all services (use service names for specific ones)
+        counters:
+          - name: "Active"  # 1 = Running, 0 = Stopped
+            metric_type: gauge
+          - name: "Elapsed Time"  # Service uptime
+            metric_type: cumulative
+      - object: "Process"
+        instances: ["splunkd", "w3wp", "sqlservr"]  # Replace with actual service names
+        counters:
+          - name: "% Processor Time"
+            metric_type: gauge
+            unit: "percent"
+          - name: "Working Set"
+            metric_type: gauge
+            unit: "bytes"
+
+processors:
+  batch:
+
+exporters:
+  otlphttp:
+    endpoint: "https://ingest.<your-splunk-url>"
+    headers:
+      "X-Splunk-Token": "<your-token>"
+
+service:
+  pipelines:
+    metrics:
+      receivers: [windowsperfcounters]
+      processors: [batch]
+      exporters: [otlphttp]
