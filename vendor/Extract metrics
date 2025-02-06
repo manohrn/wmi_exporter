@@ -1,0 +1,43 @@
+import requests
+import pandas as pd
+
+# Splunk Observability Cloud API Configuration
+REALM = "us1"  # Change to your Splunk realm
+ACCESS_TOKEN = "YOUR_ACCESS_TOKEN"  # Replace with your API token
+
+# API URL
+url = f"https://api.{REALM}.signalfx.com/v2/metric"
+
+# Headers
+headers = {
+    "X-SF-TOKEN": ACCESS_TOKEN,
+    "Content-Type": "application/json"
+}
+
+# Fetch metrics from Splunk Observability Cloud
+response = requests.get(url, headers=headers)
+
+if response.status_code == 200:
+    metrics_data = response.json().get("results", [])
+
+    # Dictionary to store metrics by receiver type
+    metrics_by_receiver = {}
+
+    for metric in metrics_data:
+        metric_name = metric.get("name", "Unknown")
+        receiver_name = metric.get("customProperties", {}).get("receiver", "Unknown_Receiver")
+
+        # Store metrics in corresponding receiver category
+        if receiver_name not in metrics_by_receiver:
+            metrics_by_receiver[receiver_name] = []
+        metrics_by_receiver[receiver_name].append(metric_name)
+
+    # Save each receiver’s metrics to a separate CSV file
+    for receiver, metrics in metrics_by_receiver.items():
+        df = pd.DataFrame(metrics, columns=["Metric Name"])
+        filename = f"{receiver}_metrics.csv".replace(" ", "_")  # Format file name
+        df.to_csv(filename, index=False)
+        print(f"Saved metrics for receiver '{receiver}' to {filename}")
+
+else:
+    print("Error fetching metrics:", response.json())
