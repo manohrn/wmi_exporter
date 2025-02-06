@@ -1,0 +1,130 @@
+Here’s a structured Confluence page draft based on your POC with Splunk OpenTelemetry Collector to push metrics to Splunk Observability Cloud. You can copy and paste this into Confluence, modify it as needed, and add any screenshots or configuration files.
+
+POC: Splunk OpenTelemetry Collector for Metrics Ingestion into Splunk Observability Cloud
+
+Objective
+
+This Proof of Concept (POC) was conducted to evaluate the Splunk OpenTelemetry Collector (OTel Collector) for collecting and pushing system and application metrics to Splunk Observability Cloud.
+
+The goal was to:
+	•	Use hostmetrics receiver to capture system-level metrics.
+	•	Use Smart Agent receiver to monitor Windows services.
+	•	Use Performance Counters (Preston Counters) to capture detailed Windows metrics.
+
+Architecture
+
+Components Used
+	•	Splunk OpenTelemetry Collector (Agent mode)
+	•	Splunk Observability Cloud (Metrics ingestion)
+	•	Windows-based system
+	•	OTel Hostmetrics Receiver (For system metrics)
+	•	Smart Agent Receiver (For Windows Service Monitoring)
+	•	Performance Counters (For Windows performance insights)
+
+Data Flow
+	1.	OTel Collector scrapes system and process metrics.
+	2.	Metrics are processed and formatted.
+	3.	Metrics are sent to Splunk Observability Cloud using the Splunk HEC (HTTP Event Collector) exporter.
+
+Implementation Details
+
+1. Installing Splunk OTel Collector
+
+The Splunk OTel Collector was installed using the standard Windows installation package.
+
+msiexec.exe /i splunk-otel-collector.msi /quiet
+
+	Note: Ensure you have the correct Splunk access token for metric ingestion.
+
+2. Configuration (otel-config.yaml)
+
+Below is the otel-collector configuration used in the POC.
+
+receivers:
+  hostmetrics:
+    scrapers:
+      cpu: {}
+      memory: {}
+      disk: {}
+      filesystem: {}
+      network: {}
+      load: {}
+      paging: {}
+
+  smartagent/windows-services:
+    type: windows-services
+    services:
+      - "SplunkForwarder"
+      - "wuauserv"
+
+  smartagent/perf-counter:
+    type: telegraf/win_perf_counters
+    counters:
+      - ObjectName: "Processor"
+        Instances: ["*"]
+        Counters: ["% Processor Time", "% User Time", "% Privileged Time"]
+        IncludeTotal: true
+      - ObjectName: "Memory"
+        Counters: ["Available Bytes", "Cache Bytes", "Committed Bytes"]
+        IncludeTotal: true
+
+exporters:
+  signalfx:
+    access_token: "<YOUR_SPLUNK_ACCESS_TOKEN>"
+    realm: "us1"  # Change to your Splunk realm
+
+service:
+  pipelines:
+    metrics:
+      receivers: [hostmetrics, smartagent/windows-services, smartagent/perf-counter]
+      exporters: [signalfx]
+
+3. Key Metrics Collected
+
+Host Metrics
+
+Collected from the hostmetrics receiver:
+	•	CPU usage (% Processor Time)
+	•	Memory consumption (Available Bytes, Committed Bytes)
+	•	Disk utilization
+	•	Network I/O
+
+Windows Service Monitoring
+
+Collected from the Smart Agent receiver:
+	•	Windows services: SplunkForwarder, Windows Update Service (wuauserv)
+	•	Service states (running, stopped, paused)
+
+Windows Performance Counters
+
+Collected using Preston Counters:
+	•	CPU user time, privileged time
+	•	Memory usage stats
+	•	Page faults per second
+
+4. Observability in Splunk
+
+After configuring the OTel Collector, the metrics were visible in Splunk Observability Cloud, where:
+	•	Dashboards were created for CPU, Memory, and Disk utilization.
+	•	Alerts were set up to notify on high CPU or memory usage.
+	•	Windows service monitoring was validated.
+
+Findings & Next Steps
+
+Findings
+
+✔ Successfully collected and ingested host and Windows service metrics.
+✔ Splunk dashboards provided real-time insights.
+✔ Performance Counters provided granular Windows metrics.
+✔ No major performance overhead observed.
+
+Next Steps
+	•	Fine-tune metric collection intervals.
+	•	Explore log collection using the Splunk OTel log receiver.
+	•	Optimize exporter configurations for better metric granularity.
+
+Conclusion
+
+The Splunk OpenTelemetry Collector proved to be a reliable and scalable solution for collecting and monitoring Windows-based system metrics. The combination of hostmetrics, Smart Agent, and Performance Counters provided deep visibility into system performance.
+
+Let me know if you need any modifications!
