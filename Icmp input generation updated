@@ -1,0 +1,61 @@
+import csv
+import yaml
+import os
+
+# Function to control YAML formatting
+class OrderedDumper(yaml.Dumper):
+    def increase_indent(self, flow=False, indentless=False):
+        return super(OrderedDumper, self).increase_indent(flow, indentless=False)
+
+# Function to generate YAML configuration from CSV
+def generate_yaml_from_csv(csv_file, output_yaml):
+    if not os.path.exists(csv_file):
+        print(f"Error: CSV file '{csv_file}' not found.")
+        return
+
+    try:
+        with open(csv_file, "r", encoding="utf-8") as file:
+            csv_reader = csv.DictReader(file)
+
+            # Validate required headers
+            required_headers = {"Monitor_Title", "Monitor_Type", "Group", "Frequency", "Host", "AppId", "Basemon"}
+            if not required_headers.issubset(set(csv_reader.fieldnames)):
+                print(f"Error: CSV file must contain the following columns: {required_headers}")
+                return
+
+            targets = []
+            for counter, row in enumerate(csv_reader, start=1):
+                # Generate a unique name by combining Monitor_Title with a counter
+                sanitized_title = row["Monitor_Title"].replace(" ", "_").lower()  # Sanitize title (replace spaces with underscores)
+                dynamic_name = f"{sanitized_title}_{counter}"
+
+                target = {
+                    "targets": [row["Host"]],
+                    "labels": {
+                        "name": dynamic_name,  # Now mapped from Monitor_Title with a counter
+                        "monitor_title": row["Monitor_Title"],
+                        "monitor_type": row["Monitor_Type"],
+                        "group": row["Group"],
+                        "frequency": row["Frequency"],
+                        "host": row["Host"],
+                        "app_id": row["AppId"],
+                        "basemon": row["Basemon"]
+                    }
+                }
+                targets.append(target)
+
+        # Write YAML output
+        with open(output_yaml, "w", encoding="utf-8") as yaml_file:
+            yaml.dump(targets, yaml_file, Dumper=OrderedDumper, default_flow_style=False, sort_keys=False)
+
+        print(f"YAML configuration successfully generated: {output_yaml}")
+
+    except Exception as e:
+        print(f"Error processing file: {e}")
+
+# File paths
+csv_file = "servers.csv"  # Replace with actual CSV file path
+output_yaml = "config.yaml"  # Replace with desired output file
+
+# Run the function
+generate_yaml_from_csv(csv_file, output_yaml)
