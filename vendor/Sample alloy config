@@ -1,0 +1,57 @@
+discovery.http "ping_discovery" {
+  url = "http://your-api-server:5000/blackbox-targets"
+  refresh_interval = "1m"
+}
+
+prometheus.exporter.blackbox "ping_exporter" {
+  config = jsonencode({
+    modules = {
+      icmp = {
+        prober = "icmp"
+        timeout = "5s"
+      }
+    }
+  })
+  targets = discovery.http.ping_discovery.targets
+}
+
+prometheus.scrape "ping_10s" {
+  targets = [for t in prometheus.exporter.blackbox.ping_exporter.targets : t if t.labels.interval == "10s"]
+  scrape_interval = "10s"
+  metrics_path = "/probe"
+  params = {
+    module = ["icmp"]
+  }
+  forward_to = [prometheus.remote_write.example.receiver]
+}
+
+prometheus.scrape "ping_30s" {
+  targets = [for t in prometheus.exporter.blackbox.ping_exporter.targets : t if t.labels.interval == "30s"]
+  scrape_interval = "30s"
+  metrics_path = "/probe"
+  params = {
+    module = ["icmp"]
+  }
+  forward_to = [prometheus.remote_write.example.receiver]
+}
+
+prometheus.scrape "ping_60s" {
+  targets = [for t in prometheus.exporter.blackbox.ping_exporter.targets : t if t.labels.interval == "60s"]
+  scrape_interval = "60s"
+  metrics_path = "/probe"
+  params = {
+    module = ["icmp"]
+  }
+  forward_to = [prometheus.remote_write.example.receiver]
+}
+
+prometheus.remote_write "example" {
+  endpoint {
+    url = PROMETHEUS_REMOTE_WRITE_URL
+
+    basic_auth {
+      username = USERNAME
+      password = PASSWORD
+    }
+  }
+}
