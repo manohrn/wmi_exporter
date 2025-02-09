@@ -1,0 +1,59 @@
+discovery.file "icmp" {
+  files = ["targets.yaml"]
+}
+
+prometheus.exporter.blackbox "integrations_blackbox" {
+  config = jsonencode({
+    modules = {
+      icmp = {
+        prober = "icmp"
+        timeout = "15s"
+      }
+    }
+  })
+  probe_timeout_offset = "5s"
+  targets = discovery.file.icmp.targets
+}
+
+# Relabel targets based on frequency
+discovery.relabel "ping_30s_targets" {
+  targets = prometheus.exporter.blackbox.integrations_blackbox.targets
+  rule {
+    source_labels = ["frequency"]
+    regex = "30s"
+    action = "keep"
+  }
+}
+
+discovery.relabel "ping_60s_targets" {
+  targets = prometheus.exporter.blackbox.integrations_blackbox.targets
+  rule {
+    source_labels = ["frequency"]
+    regex = "60s"
+    action = "keep"
+  }
+}
+
+prometheus.scrape "ping_30s" {
+  targets = discovery.relabel.ping_30s_targets.targets
+  scrape_interval = "30s"
+  forward_to = [prometheus.remote_write.integrations.receiver]
+  job_name = "integrations/blackbox_30s"
+}
+
+prometheus.scrape "ping_60s" {
+  targets = discovery.relabel.ping_60s_targets.targets
+  scrape_interval = "60s"
+  forward_to = [prometheus.remote_write.integrations.receiver]
+  job_name = "integrations/blackbox_60s"
+}
+
+prometheus.remote_write "integrations" {
+  endpoint {
+    url = "https://prometheus-dedicated-1d-prod-us-central-0.grafana.net/api/prom/push"
+    basic_auth {
+      username = "279882"
+      password = "your_token"
+    }
+  }
+}
