@@ -1,0 +1,54 @@
+import oracledb
+import pandas as pd
+import yaml
+
+# Oracle DB Connection Configuration
+DB_USER = "your_username"
+DB_PASSWORD = "your_password"
+DB_DSN = "your_db_host:your_db_port/your_service_name"
+
+# SQL Query to Fetch Data (Modify Based on Your Table Structure)
+SQL_QUERY = """
+SELECT monitor_title, host, group_name, frequency, app_id, basename
+FROM your_table_name
+"""
+
+# Connect to Oracle and Fetch Data
+def fetch_data():
+    with oracledb.connect(user=DB_USER, password=DB_PASSWORD, dsn=DB_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(SQL_QUERY)
+            data = cursor.fetchall()
+            columns = [desc[0].lower() for desc in cursor.description]  # Get column names
+            df = pd.DataFrame(data, columns=columns)
+    return df
+
+# Convert DataFrame to YAML
+def convert_to_yaml(df, output_file="active_config.yaml"):
+    yaml_data = []
+    
+    for _, row in df.iterrows():
+        yaml_entry = {
+            "targets": [row["host"]],
+            "labels": {
+                "name": row["monitor_title"],
+                "monitor_title": row["monitor_title"],
+                "module": "icmp",
+                "monitor_type": "Ping",
+                "group": row["group_name"],
+                "frequency": f"{row['frequency']} minutes",
+                "host": row["host"],
+                "app_id": row["app_id"],
+                "basename": "yes" if str(row["basename"]).strip().lower() == "yes" else "no"
+            }
+        }
+        yaml_data.append(yaml_entry)
+    
+    with open(output_file, "w") as yaml_file:
+        yaml.dump(yaml_data, yaml_file, default_flow_style=False)
+
+# Execute the Workflow
+if __name__ == "__main__":
+    df = fetch_data()
+    convert_to_yaml(df, "active_config.yaml")
+    print("✅ YAML file generated successfully!")
