@@ -1,0 +1,45 @@
+# Define variables
+$serviceName = "GrafanaAgent"
+$grafanaAgentPath = "C:\Program Files\Grafana Agent\grafana-agent.exe"  # Update if needed
+$healthCheckUrl = "http://localhost:12345/-/healthy"  # Replace with the actual health check URL
+
+# Function to get Grafana Agent version
+function Get-GrafanaAgentVersion {
+    if (Test-Path $grafanaAgentPath) {
+        $versionOutput = & $grafanaAgentPath --version 2>&1
+        if ($versionOutput -match "0.39.0") {
+            return $true
+        }
+    }
+    return $false
+}
+
+# Check if the Grafana Agent version is 0.39.0
+if (Get-GrafanaAgentVersion) {
+    Write-Host "Grafana Agent is version 0.39.0. Updating service startup type to Delayed Start..."
+
+    # Change service startup type to Delayed Start
+    sc.exe config $serviceName start= delayed-auto | Out-Null
+
+    # Restart the service to apply changes
+    Restart-Service -Name $serviceName -Force
+    Start-Sleep -Seconds 5  # Wait for a few seconds
+
+    # Check the service status
+    $serviceStatus = Get-Service -Name $serviceName
+    Write-Host "Service Status: $($serviceStatus.Status)"
+
+    # Check if the agent is healthy
+    try {
+        $response = Invoke-WebRequest -Uri $healthCheckUrl -UseBasicParsing -TimeoutSec 5
+        if ($response.StatusCode -eq 200) {
+            Write-Host "Grafana Agent is healthy."
+        } else {
+            Write-Host "Grafana Agent health check failed with status code: $($response.StatusCode)"
+        }
+    } catch {
+        Write-Host "Failed to reach Grafana Agent health endpoint."
+    }
+} else {
+    Write-Host "Grafana Agent version is not 0.39.0. No changes made."
+}
