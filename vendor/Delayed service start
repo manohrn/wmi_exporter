@@ -1,0 +1,78 @@
+# Define variables
+$serviceName = "GrafanaAgent"
+$grafanaAgentPath = "C:\Program Files\Grafana Agent\grafana-agent.exe"  # Update if needed
+$healthCheckUrl = "http://localhost:12345/-/healthy"  # Replace with the actual health check URL
+
+# Function to get Grafana Agent version
+function Get-GrafanaAgentVersion {
+    if (Test-Path $grafanaAgentPath) {
+        $versionOutput = & $grafanaAgentPath --version 2>&1
+        if ($versionOutput -match "0.39.0") {
+            return $true
+        }
+    }
+    return $false
+}
+
+# Exit if Grafana Agent version is NOT 0.39.0
+if (-not (Get-GrafanaAgentVersion)) {
+    Write-Host "Grafana Agent version is NOT 0.39.0. No changes will be made."
+    exit 0
+}
+
+Write-Host "Grafana Agent version is 0.39.0. Proceeding with configuration changes..."
+
+# Function to check service status
+function Get-ServiceStatus {
+    return (Get-Service -Name $serviceName -ErrorAction SilentlyContinue).Status
+}
+
+# Function to validate the health check URL
+function Validate-HealthCheck {
+    try {
+        $response = Invoke-WebRequest -Uri $healthCheckUrl -UseBasicParsing -TimeoutSec 5
+        if ($response.StatusCode -eq 200 -and $response.Content.Trim() -eq "OK") {
+            Write-Host "Grafana Agent health check passed: OK"
+            return $true
+        } else {
+            Write-Host "Grafana Agent health check failed! Expected 'OK', got '$($response.Content.Trim())'"
+            return $false
+        }
+    } catch {
+        Write-Host "Failed to reach Grafana Agent health endpoint."
+        return $false
+    }
+}
+
+# Check service status
+$serviceStatus = Get-ServiceStatus
+
+if ($serviceStatus -eq "Running") {
+    Write-Host "Grafana Agent is currently running. Stopping service..."
+    Stop-Service -Name $serviceName -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 3  # Wait for service to stop
+}
+
+# Change service startup type to Delayed Start
+Write-Host "Configuring service to Delayed Start..."
+sc.exe config $serviceName start= delayed-auto | Out-Null
+
+# If service was stopped, start it
+Write-Host "Starting Grafana Agent service..."
+Start-Service -Name $serviceName -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 5  # Give some time for service to stabilize
+
+# Validate service status
+$finalServiceStatus = Get-ServiceStatus
+if ($finalServiceStatus -eq "Running") {
+    Write-Host "Grafana Agent service is running and configured for Delayed Start."
+} else {
+    Write-Host "ERROR: Grafana Agent service failed to start."
+    exit 1
+}
+
+# Validate health check URL
+if (-not (Validate-HealthCheck)) {
+    Write-Host "ERROR: Health check failed. Please investigate."
+    exit 1
+}
