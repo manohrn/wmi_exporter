@@ -1,0 +1,65 @@
+---
+- name: Ensure Grafana Agent is running with Delayed Start and is healthy
+  hosts: all
+  gather_facts: no
+  vars:
+    service_name: "GrafanaAgent"
+    agent_path: "C:\\Program Files\\Grafana Agent\\grafana-agent.exe"
+    health_check_url: "http://localhost:12345/-/healthy"
+
+  tasks:
+
+    - name: Check Grafana Agent Version
+      win_command: '"{{ agent_path }}" --version'
+      register: agent_version
+      changed_when: false
+
+    - name: Debug Grafana Agent Version Output
+      debug:
+        msg: "{{ agent_version.stdout }}"
+
+    - name: Set service to delayed start
+      win_service:
+        name: "{{ service_name }}"
+        start_mode: delayed-auto
+      when: "'0.39.0' in agent_version.stdout"
+
+    - name: Restart Grafana Agent service
+      win_service:
+        name: "{{ service_name }}"
+        state: restarted
+      when: "'0.39.0' in agent_version.stdout"
+
+    - name: Wait for service to start
+      pause:
+        seconds: 5
+      when: "'0.39.0' in agent_version.stdout"
+
+    - name: Check service status
+      win_service:
+        name: "{{ service_name }}"
+      register: service_status
+
+    - name: Debug Service Status
+      debug:
+        msg: "Service is {{ service_status.state }}"
+
+    - name: Check Grafana Agent Health (Expecting 'OK')
+      win_uri:
+        url: "{{ health_check_url }}"
+        method: GET
+        return_content: yes
+        status_code: 200
+      register: health_check
+      ignore_errors: yes
+      when: "'0.39.0' in agent_version.stdout"
+
+    - name: Validate Health Check Response (Expecting 'OK')
+      fail:
+        msg: "Grafana Agent health check failed! Expected 'OK', got '{{ health_check.content | trim }}'"
+      when: "'0.39.0' in agent_version.stdout and health_check.content | trim != 'OK'"
+
+    - name: Debug Health Check
+      debug:
+        msg: "Grafana Agent is healthy: {{ health_check.content | trim }}"
+      when: "'0.39.0' in agent_version.stdout and health_check.content | trim == 'OK'"
