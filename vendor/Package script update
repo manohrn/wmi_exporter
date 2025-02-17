@@ -1,0 +1,43 @@
+if($InstalledVersion) {
+    if([version]$InstalledVersion -ge [version]$PRODVER) {
+        
+        # Insert the service mode update logic here (Line 902)
+        $serviceName = "GrafanaAgent"
+        $scOutput = sc.exe qc $serviceName
+        if ($scOutput -match "START_TYPE[\s]+: [0-9]+ ([A-Za-z_]+)") {
+            $startMode = $matches[1]
+            Write-Host "Current Service Start Mode: $startMode"
+
+            if ($startMode -eq "AUTO_START") {
+                Write-Host "Changing service to Delayed Auto Start..."
+                sc.exe config $serviceName start= delayed-auto | Out-Null
+                Start-Sleep -Seconds 2
+
+                # Verify if change was successful
+                $newOutput = sc.exe qc $serviceName
+                if ($newOutput -match "START_TYPE[\s]+: [0-9]+ DELAYED_AUTO_START") {
+                    Write-Host "Service is now set to Delayed Auto Start."
+                } else {
+                    Write-Host "Failed to update service start mode."
+                    Exit-Script -Patching $Patching -Label $Product -LF $logFile
+                }
+            } else {
+                Write-Host "Service is already in Delayed Auto Start mode."
+            }
+        } else {
+            Write-Host "Could not determine service start mode."
+            Exit-Script -Patching $Patching -Label $Product -LF $logFile
+        }
+
+        # Continue with agent validation
+        if(Validate-Grafana -LogFile $logFile){
+            Write-Host "Current Version already installed and agent healthy, exiting." | Exit-Script -Patching $Patching -Label $Product -LF $logFile
+        } else {
+            if(Register-GrafanaService -LogFile $logFile -LF $logFile) {
+                Write-Host "Current Version already installed, but agent not healthy"
+            } else {
+                Write-Host "Current Version already installed, but agent not healthy" | Exit-Script -Patching $Patching -Label $Product -LF $logFile
+            }
+        }
+    }
+}
