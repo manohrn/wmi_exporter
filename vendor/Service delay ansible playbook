@@ -1,0 +1,71 @@
+---
+- name: Validate and Update Grafana Agent Service on Windows Servers
+  hosts: windows
+  gather_facts: yes
+  vars:
+    server_results: []
+    csv_template: |
+      Server, Start Mode, State
+      {% for result in server_results %}
+      {{ result.server }}, {{ result.start_mode }}, {{ result.state }}
+      {% endfor %}
+
+  tasks:
+    - name: Check Grafana Agent service status
+      win_service_info:
+        name: "GrafanaAgent"
+      register: service_status
+
+    - name: Skip changes if service is already in Delayed Auto Start mode
+      when: service_status.services[0].start_mode == "Delayed Auto"
+      block:
+        - name: Ensure service is running
+          win_service:
+            name: "GrafanaAgent"
+            state: started
+
+        - name: Store results without modification
+          set_fact:
+            server_results: "{{ server_results + [{'server': inventory_hostname, 'start_mode': service_status.services[0].start_mode, 'state': 'running (no changes)'}] }}"
+
+    - name: Update startup type if service is NOT in Delayed Auto Start
+      when: service_status.services[0].start_mode != "Delayed Auto"
+      block:
+        - name: Stop the Grafana Agent service if running
+          win_service:
+            name: "GrafanaAgent"
+            state: stopped
+          when: service_status.services[0].state == "running"
+
+        - name: Change the startup type to Delayed Start
+          win_service:
+            name: "GrafanaAgent"
+            start_mode: delayed
+
+        - name: Start the Grafana Agent service
+          win_service:
+            name: "GrafanaAgent"
+            state: started
+
+        - name: Validate service is now Delayed Auto Start and Running
+          win_service_info:
+            name: "GrafanaAgent"
+          register: final_service_status
+
+        - name: Store results after modification
+          set_fact:
+            server_results: "{{ server_results + [{'server': inventory_hostname, 'start_mode': final_service_status.services[0].start_mode, 'state': final_service_status.services[0].state}] }}"
+
+    - name: Create Jinja2 template file dynamically
+      copy:
+        content: "{{ csv_template }}"
+        dest: "/tmp/report_template.j2"
+
+    - name: Generate CSV Report from Inline Template
+      template:
+        src: "/tmp/report_template.j2"
+        dest: "./grafana_service_report.csv"
+
+    - name: Print execution summary
+      debug:
+        msg: "{{ server_results }}"
