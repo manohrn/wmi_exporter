@@ -1,0 +1,27 @@
+# Define input and output files
+$serverList = Get-Content "servers.txt"
+$outputFile = "PingReport.csv"
+
+# Set max degree of parallelism (adjust based on your system's capability)
+$maxParallel = 100  # Adjust based on available system resources
+
+# Run pings in parallel
+$pingResults = $serverList | ForEach-Object -Parallel {
+    $server = $_
+    if (Test-Connection -ComputerName $server -Count 2 -Quiet -ErrorAction SilentlyContinue) {
+        [PSCustomObject]@{
+            ServerName = $server
+            Status = "Reachable"
+        }
+    } else {
+        [PSCustomObject]@{
+            ServerName = $server
+            Status = "Not Reachable"
+        }
+    }
+} -ThrottleLimit $maxParallel
+
+# Export results to CSV
+$pingResults | Export-Csv -Path $outputFile -NoTypeInformation
+
+Write-Host "Ping report generated: $outputFile"
