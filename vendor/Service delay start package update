@@ -1,0 +1,53 @@
+if ($InstalledVersion) {
+    if ([version]$InstalledVersion -ge [version]$PRODVER) {
+        
+        # Service mode update logic
+        $serviceName = "GrafanaAgent"
+        $scOutput = sc.exe qc $serviceName
+        $serviceStatus = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+
+        if ($scOutput -match "START_TYPE[\s]+: [0-9]+ ([A-Za-z_]+)") {
+            $startMode = $matches[1]
+            Write-Host "Current Service Start Mode: $startMode"
+        } else {
+            Write-Host "Could not determine service start mode."
+            Exit-Script -Patching $Patching -Label $Product -LF $logFile
+        }
+
+        # Check if service is stopped
+        if ($serviceStatus.Status -eq "Stopped") {
+            Write-Host "Service is stopped. Updating to Delayed Auto Start and restarting service..."
+            sc.exe config $serviceName start= delayed-auto | Out-Null
+            Start-Sleep -Seconds 2
+            Start-Service -Name $serviceName
+        } elseif ($startMode -eq "AUTO_START") {
+            Write-Host "Service is running with Auto Start mode. Updating to Delayed Auto Start..."
+            sc.exe config $serviceName start= delayed-auto | Out-Null
+            Start-Sleep -Seconds 2
+        } elseif ($startMode -eq "DELAYED_AUTO_START") {
+            Write-Host "Service is already set to Delayed Auto Start mode."
+        }
+
+        # Verify changes
+        $newOutput = sc.exe qc $serviceName
+        $updatedServiceStatus = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+
+        if ($newOutput -match "START_TYPE[\s]+: [0-9]+ DELAYED_AUTO_START" -and $updatedServiceStatus.Status -eq "Running") {
+            Write-Host "Service is running and set to Delayed Auto Start."
+        } else {
+            Write-Host "Failed to update service start mode or service did not start correctly."
+            Exit-Script -Patching $Patching -Label $Product -LF $logFile
+        }
+
+        # Continue with agent validation
+        if (Validate-Grafana -LogFile $logFile) {
+            Write-Host "Current Version already installed and agent healthy, exiting." | Exit-Script -Patching $Patching -Label $Product -LF $logFile
+        } else {
+            if (Register-GrafanaService -LogFile $logFile -LF $logFile) {
+                Write-Host "Current Version already installed, but agent not healthy"
+            } else {
+                Write-Host "Current Version already installed, but agent not healthy" | Exit-Script -Patching $Patching -Label $Product -LF $logFile
+            }
+        }
+    }
+}
