@@ -1,0 +1,26 @@
+# Define input and output files
+$serverList = Get-Content "servers.txt"
+$outputFile = "PingReport.csv"
+
+# Initialize an empty array to store results
+$pingResults = @()
+
+# Loop through each server and check reachability
+foreach ($server in $serverList) {
+    if (Test-Connection -ComputerName $server -Count 2 -Quiet) {
+        $status = "Reachable"
+    } else {
+        $status = "Not Reachable"
+    }
+
+    # Store the result
+    $pingResults += [PSCustomObject]@{
+        ServerName = $server
+        Status = $status
+    }
+}
+
+# Export results to CSV
+$pingResults | Export-Csv -Path $outputFile -NoTypeInformation
+
+Write-Host "Ping report generated: $outputFile"
