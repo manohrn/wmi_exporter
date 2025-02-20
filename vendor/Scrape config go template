@@ -1,0 +1,34 @@
+scrape_configs:
+{{- range .ScrapeConfigs }}
+  - job_name: "{{ .JobName }}"
+    {{- if .MetricsPath }}
+    metrics_path: "{{ .MetricsPath }}"
+    {{- end }}
+    {{- if .ScrapeInterval }}
+    scrape_interval: "{{ .ScrapeInterval }}"
+    {{- end }}
+    {{- if .ScrapeTimeout }}
+    scrape_timeout: "{{ .ScrapeTimeout }}"
+    {{- end }}
+    scheme: "{{ .Scheme }}"
+    static_configs:
+      - targets:
+          {{- range .Targets }}
+          - "{{ . }}"
+          {{- end }}
+        {{- if .Labels }}
+        labels:
+          {{- range $key, $value := .Labels }}
+          {{ $key }}: "{{ $value }}"
+          {{- end }}
+        {{- end }}
+    {{- if .BasicAuth }}
+    basic_auth:
+      username: "{{ .BasicAuth.Username }}"
+      password_file: "{{ if eq .OS "windows" }}{{ .BasicAuth.WindowsPasswordFile }}{{ else }}{{ .BasicAuth.LinuxPasswordFile }}{{ end }}"
+    {{- end }}
+    {{- if .APIToken }}
+    authorization:
+      credentials_file: "{{ if eq .OS "windows" }}{{ .APIToken.WindowsTokenFile }}{{ else }}{{ .APIToken.LinuxTokenFile }}{{ end }}"
+    {{- end }}
+{{- end }}
