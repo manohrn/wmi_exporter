@@ -1,0 +1,41 @@
+{
+  "scrape_configs": [
+    {
+      "job_name": "node_exporter",
+      "scrape_interval": "15s",
+      "scrape_timeout": "10s",
+      "metrics_path": "/metrics",
+      "scheme": "http",
+      "targets": ["node1:9100", "node2:9100"],
+      "labels": {
+        "env": "prod",
+        "region": "us-east"
+      }
+    },
+    {
+      "job_name": "app_metrics",
+      "scrape_interval": "30s",
+      "scrape_timeout": "20s",
+      "scheme": "https",
+      "targets": ["app1:8080", "app2:8080"],
+      "os": "linux",
+      "basic_auth": {
+        "username": "admin",
+        "linux_password_file": "/etc/prometheus/secrets/app_password",
+        "windows_password_file": "c:\\prometheus\\secrets\\app_password.txt"
+      }
+    },
+    {
+      "job_name": "api_service",
+      "scrape_interval": "45s",
+      "scrape_timeout": "30s",
+      "scheme": "https",
+      "targets": ["api.example.com:9090"],
+      "os": "windows",
+      "api_token": {
+        "linux_token_file": "/etc/prometheus/secrets/api_token",
+        "windows_token_file": "c:\\prometheus\\secrets\\api_token.txt"
+      }
+    }
+  ]
+}
