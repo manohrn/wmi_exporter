@@ -1,0 +1,47 @@
+# Define the input and output file paths
+$inputFile = "C:\path\to\hosts.txt"  # Update with actual path
+$outputFile = "C:\path\to\ping_results.csv"  # Update with desired output path
+
+# Read hostnames or IPs from the input file
+$hosts = Get-Content $inputFile
+
+# Array to store job objects
+$jobs = @()
+
+# Define the number of concurrent jobs (Adjust based on system performance)
+$maxConcurrentJobs = 50  
+
+# Loop through each host and create a background job
+foreach ($host in $hosts) {
+    # Start a job for each ping operation
+    $jobs += Start-Job -ScriptBlock {
+        param ($host)
+        $ping = Test-Connection -ComputerName $host -Count 2 -Quiet
+        $status = if ($ping) { "Reachable" } else { "Not Reachable" }
+
+        # Output the result
+        [PSCustomObject]@{
+            Hostname = $host
+            Status   = $status
+        }
+    } -ArgumentList $host
+
+    # Limit the number of concurrent jobs
+    while (@(Get-Job -State Running).Count -ge $maxConcurrentJobs) {
+        Start-Sleep -Seconds 1
+    }
+}
+
+Write-Host "Waiting for jobs to complete..."
+Wait-Job -Job $jobs
+
+# Collect results from all jobs
+$results = $jobs | ForEach-Object { Receive-Job -Job $_ }
+
+# Cleanup completed jobs
+$jobs | Remove-Job
+
+# Export results to CSV
+$results | Export-Csv -Path $outputFile -NoTypeInformation
+
+Write-Host "Ping results saved to $outputFile"
