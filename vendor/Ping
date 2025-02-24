@@ -1,0 +1,65 @@
+# Define input and output file paths
+$inputFile = "C:\path\to\hosts.txt"  # Update with actual path
+$outputFile = "C:\path\to\ping_results.csv"  # Update with desired output path
+
+# Read hostnames or IPs from the input file
+$hosts = Get-Content $inputFile
+
+# Array to store job objects
+$jobs = @()
+
+# Define max concurrent jobs (adjust based on system performance)
+$maxConcurrentJobs = 50  
+
+# Function to check host reachability
+foreach ($host in $hosts) {
+    # Start a job for each ping operation
+    $jobs += Start-Job -ScriptBlock {
+        param ($host)
+        try {
+            # Perform the ping test using WMI
+            $pingResult = Get-WmiObject Win32_PingStatus -Filter "Address='$host'" -ErrorAction SilentlyContinue
+            
+            if ($pingResult -and $pingResult.StatusCode -eq 0) {
+                $status = "Reachable"
+                $responseTime = $pingResult.ResponseTime
+                $ipAddress = $pingResult.IPV4Address
+            } else {
+                $status = "Not Reachable"
+                $responseTime = "N/A"
+                $ipAddress = "N/A"
+            }
+        } catch {
+            $status = "Not Reachable"
+            $responseTime = "N/A"
+            $ipAddress = "N/A"
+        }
+
+        # Output the result
+        [PSCustomObject]@{
+            Hostname = $host
+            Status   = $status
+            IPAddress = $ipAddress
+            ResponseTime = $responseTime
+        }
+    } -ArgumentList $host
+
+    # Limit the number of concurrent jobs
+    while (@(Get-Job -State Running).Count -ge $maxConcurrentJobs) {
+        Start-Sleep -Seconds 1
+    }
+}
+
+Write-Host "Waiting for jobs to complete..."
+Wait-Job -Job $jobs
+
+# Collect results from all jobs
+$results = $jobs | ForEach-Object { Receive-Job -Job $_ }
+
+# Cleanup completed jobs
+$jobs | Remove-Job
+
+# Export results to CSV
+$results | Export-Csv -Path $outputFile -NoTypeInformation
+
+Write-Host "Ping results saved to $outputFile"
