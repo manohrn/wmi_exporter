@@ -1,0 +1,23 @@
+# Define the input and output file paths
+$inputFile = "C:\path\to\hosts.txt"  # Update with the actual path
+$outputFile = "C:\path\to\ping_results.csv"  # Update with the desired output path
+
+# Read hostnames or IPs from the input file
+$hosts = Get-Content $inputFile
+
+# Run the ping check in parallel
+$results = $hosts | ForEach-Object -Parallel {
+    $ping = Test-Connection -ComputerName $_ -Count 2 -Quiet
+    $status = if ($ping) { "Reachable" } else { "Not Reachable" }
+
+    # Return the result as an object
+    [PSCustomObject]@{
+        Hostname = $_
+        Status   = $status
+    }
+} -ThrottleLimit 50  # Adjust this number based on system capacity
+
+# Export results to CSV
+$results | Export-Csv -Path $outputFile -NoTypeInformation
+
+Write-Host "Ping results saved to $outputFile"
