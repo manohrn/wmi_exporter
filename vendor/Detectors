@@ -1,0 +1,143 @@
+Here’s a detailed step-by-step guide to setting up Splunk Observability Cloud Detectors, Notification Policies, Inhibitions, Silences, Muting Rules, and REST API Integrations, including SignalFlow scripts for monitoring CPU, Memory, Disk, Swap, and Splunk OTEL Collector Health.
+
+1. Creating Detectors in Splunk Observability Cloud
+
+Steps to Create a Detector
+	1.	Navigate to Splunk Observability Cloud → Detectors.
+	2.	Click “Create Detector”.
+	3.	Choose “Custom SignalFlow Program”.
+	4.	Enter Detector Name and Description.
+	5.	Copy & Paste the SignalFlow Script from the sections below.
+	6.	Define Alert Conditions & Notification Policies.
+	7.	Save and Enable the Detector.
+
+2. SignalFlow Scripts for Monitoring System Resources
+
+These SignalFlow scripts create detectors for CPU, Memory, Disk, Swap Usage, and Splunk OTEL Collector Health.
+
+A. CPU Usage Detector
+
+cpu = data('cpu.utilization', filter=filter('host', 'your_host'))
+    .mean(over='5m')
+
+detect(when(cpu > 75, lasting='5m')).publish('High CPU Warning', severity='Warning')
+detect(when(cpu > 90, lasting='3m')).publish('Critical CPU Usage', severity='Critical')
+
+B. Memory Usage Detector
+
+memory = data('memory.usage', filter=filter('host', 'your_host'))
+    .mean(over='5m')
+
+detect(when(memory > 80, lasting='5m')).publish('High Memory Warning', severity='Warning')
+detect(when(memory > 95, lasting='3m')).publish('Critical Memory Usage', severity='Critical')
+
+C. Disk Usage Detector
+
+disk = data('disk.utilization', filter=filter('host', 'your_host') and filter('mount_point', '!= "/tmp"'))
+    .mean(over='5m')
+
+detect(when(disk > 75, lasting='5m')).publish('High Disk Usage Warning', severity='Warning')
+detect(when(disk > 90, lasting='3m')).publish('Critical Disk Usage', severity='Critical')
+
+D. Swap Usage Detector
+
+swap = data('memory.swap_usage', filter=filter('host', 'your_host'))
+    .mean(over='5m')
+
+detect(when(swap > 60, lasting='5m')).publish('High Swap Usage Warning', severity='Warning')
+detect(when(swap > 80, lasting='3m')).publish('Critical Swap Usage', severity='Critical')
+
+E. Splunk OTEL Collector Self-Health Monitoring
+
+Process Uptime
+
+uptime = data('process.uptime', filter=filter('service', 'otel-collector'))
+detect(when(uptime < 300, lasting='1m')).publish('OTEL Collector Restarted', severity='Critical')
+
+CPU & Memory Monitoring
+
+cpu = data('process.cpu.utilization', filter=filter('service', 'otel-collector'))
+    .mean(over='5m')
+memory = data('process.memory.rss', filter=filter('service', 'otel-collector'))
+    .mean(over='5m')
+
+detect(when(cpu > 60, lasting='5m')).publish('High CPU Usage for OTEL Collector', severity='Warning')
+detect(when(cpu > 80, lasting='3m')).publish('Critical CPU Usage for OTEL Collector', severity='Critical')
+
+detect(when(memory > 500000000, lasting='5m')).publish('High Memory Usage for OTEL Collector', severity='Warning')
+detect(when(memory > 1000000000, lasting='3m')).publish('Critical Memory Usage for OTEL Collector', severity='Critical')
+
+Exporter & Receiver Health
+
+exporter_spans = data('otelcol_exporter_sent_spans', filter=filter('service', 'otel-collector'))
+detect(when(exporter_spans == 0, lasting='5m')).publish('No Spans Exported by OTEL Collector', severity='Critical')
+
+receiver_drops = data('otelcol_receiver_refused_spans', filter=filter('service', 'otel-collector'))
+detect(when(receiver_drops > 0, lasting='5m')).publish('OTEL Collector Dropping Spans', severity='Warning')
+
+3. Creating Notification Policies
+	1.	Go to Observability Cloud → Detectors → Notification Policies.
+	2.	Click “Create Notification Policy”.
+	3.	Define Scope (Choose Detectors & Conditions).
+	4.	Select Notification Channels (Email, Slack, PagerDuty, Webhook).
+	5.	Set Escalation Rules (e.g., Slack first, then PagerDuty if not acknowledged).
+	6.	Click “Save Policy”.
+
+4. Configuring Inhibitions
+	1.	Go to Observability Cloud → Detectors → Inhibitions.
+	2.	Click “Create Inhibition”.
+	3.	Select “Blocking Alert” (e.g., “Critical CPU Usage”).
+	4.	Select “Suppressed Alerts” (e.g., “High CPU Warning”).
+	5.	Click “Save & Apply”.
+
+✔ Use Case: Prevent “High CPU Warning” alerts if “Critical CPU Usage” is active.
+
+5. Creating Silences
+	1.	Go to Observability Cloud → Alerting → Silences.
+	2.	Click “Create Silence”.
+	3.	Choose Detectors to Silence.
+	4.	Set Silence Duration (e.g., 1 hour for maintenance).
+	5.	Click “Save & Apply”.
+
+✔ Use Case: Mute alerts during planned maintenance.
+
+6. Creating Muting Rules
+	1.	Go to Observability Cloud → Alerting → Muting Rules.
+	2.	Click “Create Muting Rule”.
+	3.	Define Scope (e.g., environment != "production").
+	4.	Click “Save & Apply”.
+
+✔ Use Case: Suppress alerts for non-production environments.
+
+7. REST API Integrations
+
+Common API Endpoints
+
+Action	HTTP Method	Endpoint
+Get all detectors	GET	/v2/detectors
+Create a detector	POST	/v2/detectors
+Silence an alert	POST	/v2/silences
+Create a muting rule	POST	/v2/mutingRules
+
+Example: Silence an Alert via API
+
+curl -X POST "https://api.signalfx.com/v2/silences" \
+     -H "X-SF-TOKEN: YOUR_API_KEY" \
+     -H "Content-Type: application/json" \
+     -d '{
+           "detectorId": "123456",
+           "reason": "Planned Maintenance",
+           "startTime": 1711234567000,
+           "endTime": 1711238567000
+         }'
+
+✔ Use Case: Automate alert suppression via API.
+
+8. Best Practices
+
+✔ Reduce Alert Noise: Use muting, inhibitions, and silences wisely.
+✔ Escalation Chains: Route alerts based on severity.
+✔ Automate via API: Use REST API for creating & managing alerts.
+✔ Test Alerts: Simulate alerts before deploying to production.
+
+✅ Need YAML-based detector configurations or dashboards? Let me know! 🚀
