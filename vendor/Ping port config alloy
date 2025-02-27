@@ -1,0 +1,61 @@
+prometheus.exporter.blackbox "tcp" {
+  config = "{ 
+    modules: { 
+      tcp_connect: { 
+        prober: tcp, 
+        timeout: 3s, 
+        tcp: { 
+          preferred_ip_protocol: \"ip4\", 
+          query_response: \"\", 
+          tls: false, 
+          send: \"\", 
+          receive: \"\" 
+        } 
+      } 
+    } 
+  }"
+
+  discovery.file "tcp" {
+    path   = "/etc/prometheus/discovery/blackbox_tcp.yaml"
+    format = "yaml"
+  }
+}
+
+prometheus.exporter.blackbox "icmp" {
+  config = "{ 
+    modules: { 
+      icmp: { 
+        prober: icmp, 
+        timeout: 2s, 
+        icmp: { 
+          preferred_ip_protocol: \"ip4\", 
+          payload_size: 56, 
+          dont_fragment: true, 
+          ttl: 64 
+        } 
+      } 
+    } 
+  }"
+
+  discovery.file "icmp" {
+    path   = "/etc/prometheus/discovery/blackbox_icmp.yaml"
+    format = "yaml"
+  }
+}
+
+discovery.relabel "blackbox" {
+  targets = concat(
+    prometheus.exporter.blackbox.tcp.targets,
+    prometheus.exporter.blackbox.icmp.targets
+  )
+
+  rule {
+    source_labels = ["__param_target"]
+    target_label  = "instance"
+  }
+}
+
+prometheus.scrape "blackbox" {
+  targets     = discovery.relabel.blackbox.output
+  forward_to  = [prometheus.remote_write.metrics_service.receiver]
+}
