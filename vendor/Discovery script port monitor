@@ -1,0 +1,37 @@
+import csv
+import yaml
+
+# Define input CSV and output YAML file paths
+csv_file = "targets.csv"  # Update this to your actual CSV file path
+yaml_file = "blackbox_tcp.yaml"
+
+# Read CSV data with UTF-8 and ignore errors
+targets = []
+with open(csv_file, mode="r", encoding="utf-8", errors="ignore") as file:
+    reader = csv.DictReader(file)
+    for row in reader:
+        targets.append({
+            "targets": [f"{row['host']}:{row['port']}"],
+            "labels": {
+                "module": "tcp_connect",
+                "name": row["name"],
+                "type": row["type"],
+                "group": row["group"],
+                "host": row["host"],
+                "port": str(row["port"]),
+                "frequency": str(row["frequency"]),
+                "error_frequency": str(row["err_freq"]),
+                "enabled": row["enabled"],
+                "timeout": str(row["timeout"])
+            }
+        })
+
+# Write to YAML file with UTF-8 encoding
+with open(yaml_file, mode="w", encoding="utf-8", errors="ignore") as file:
+    yaml.dump(targets, file, default_flow_style=False)
+
+# Print message with UTF-8 handling
+import sys
+sys.stdout.reconfigure(encoding="utf-8")
+
+print(f"✅ Discovery file '{yaml_file}' has been created successfully!")
