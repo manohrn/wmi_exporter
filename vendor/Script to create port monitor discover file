@@ -1,0 +1,33 @@
+import csv
+import yaml
+
+# Define input CSV and output YAML file paths
+csv_file = "targets.csv"  # Update this to your actual CSV file path
+yaml_file = "blackbox_tcp.yaml"
+
+# Read CSV data
+targets = []
+with open(csv_file, mode="r") as file:
+    reader = csv.DictReader(file)
+    for row in reader:
+        targets.append({
+            "targets": [f"{row['host']}:{row['port']}"],
+            "labels": {
+                "module": "tcp_connect",
+                "name": row["name"],
+                "type": row["type"],
+                "group": row["group"],
+                "host": row["host"],
+                "port": row["port"],
+                "frequency": row["frequency"],
+                "error_frequency": row["err_freq"],
+                "enabled": row["enabled"],
+                "timeout": row["timeout"]
+            }
+        })
+
+# Write to YAML file
+with open(yaml_file, mode="w") as file:
+    yaml.dump(targets, file, default_flow_style=False)
+
+print(f"✅ Discovery file '{yaml_file}' has been created successfully!")
