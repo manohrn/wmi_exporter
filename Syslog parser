@@ -1,0 +1,19 @@
+#!/bin/bash
+
+LOG_FILE="/var/log/syslog.log"
+METRICS_FILE="/var/lib/node_exporter/syslog.prom"
+
+# Count errors and warnings
+ERRORS=$(grep -c "error" $LOG_FILE)
+WARNINGS=$(grep -c "warning" $LOG_FILE)
+
+# Generate Prometheus metrics
+cat <<EOF > $METRICS_FILE
+# HELP syslog_errors_total Total system errors
+# TYPE syslog_errors_total counter
+syslog_errors_total $ERRORS
+
+# HELP syslog_warnings_total Total system warnings
+# TYPE syslog_warnings_total counter
+syslog_warnings_total $WARNINGS
+EOF
