@@ -1,0 +1,68 @@
+import requests
+import csv
+import json
+from requests.auth import HTTPBasicAuth
+
+# Aternity API Details
+ATERNITY_SERVER = "https://wf-odata.aternity.com"
+API_ENDPOINT = "/aternity.odata/latest/APPLICATION_RESOURCES_HOURLY"
+USERNAME = "manoharan.muthuraj@wellsfargo.com"  # Replace with your actual username
+PASSWORD = "your_password_here"  # Replace with your actual password
+
+# Set API URL
+url = f"{ATERNITY_SERVER}{API_ENDPOINT}"
+
+# API Query Parameters (Modify as needed)
+params = {
+    "$filter": "relative_time(last1_days)"  # Modify this filter based on your needs
+}
+
+# Headers
+headers = {"Content-Type": "application/json"}
+
+try:
+    # Make API request with Basic Authentication
+    response = requests.get(url, auth=HTTPBasicAuth(USERNAME, PASSWORD), params=params, headers=headers)
+
+    # Check API response status
+    if response.status_code == 200:
+        print("✅ API request successful!")
+
+        # Parse JSON response
+        data_list = response.json().get("value", [])
+
+        if not data_list:
+            print("⚠ No data found in API response!")
+        else:
+            # Define CSV filename
+            csv_filename = "aternity_api_output.csv"
+
+            # Extract column headers from the first record
+            headers = list(data_list[0].keys())
+
+            # Save data to CSV file
+            with open(csv_filename, mode="w", newline="", encoding="utf-8") as file:
+                writer = csv.writer(file)
+
+                # Write headers
+                writer.writerow(headers)
+
+                # Write data rows
+                for entry in data_list:
+                    writer.writerow([entry.get(col, "N/A") for col in headers])
+
+            print(f"✅ Data successfully saved to {csv_filename}")
+
+    elif response.status_code == 401:
+        print("❌ Authentication Error: Invalid username or password. Please check credentials.")
+    elif response.status_code == 400:
+        print("❌ Bad Request: Check the API URL, parameters, and filters.")
+    else:
+        print(f"❌ API Request failed with status code {response.status_code}")
+        print("Response:", response.text)
+
+except requests.exceptions.RequestException as e:
+    print(f"❌ API Request failed due to network or server error: {e}")
+
+except Exception as e:
+    print(f"❌ Unexpected Error: {e}")
