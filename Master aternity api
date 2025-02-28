@@ -1,0 +1,70 @@
+import requests
+import csv
+import json
+import sys
+from requests.auth import HTTPBasicAuth
+
+# Fix encoding for Windows
+sys.stdout.reconfigure(encoding='utf-8')
+
+# Aternity API Details
+ATERNITY_SERVER = "https://wf-odata.aternity.com"
+API_ENDPOINT = "/aternity.odata/latest/APPLICATION_RESOURCES_HOURLY"
+USERNAME = "manoharan.muthuraj@wellsfargo.com"  # Replace with your actual username
+PASSWORD = "your_password_here"  # Replace with your actual password
+
+# Set API URL
+url = f"{ATERNITY_SERVER}{API_ENDPOINT}"
+
+# API Query Parameters
+params = {
+    "$select": "PRC_CPU_UTIL_AVG,PRC_CPU_UTIL_MAX,PRC_PHYSICAL_MEMORY_UTIL_AVG,PRC_PHYSICAL_MEMORY_UTIL_MAX",
+    "$filter": "CLIENT_DEVICE_TYPE eq 'Laptop'"
+}
+
+try:
+    # Make API request with Basic Authentication
+    response = requests.get(url, auth=HTTPBasicAuth(USERNAME, PASSWORD), params=params, headers={"Content-Type": "application/json"})
+
+    # Check API response status
+    if response.status_code == 200:
+        print("✅ API request successful!")
+
+        # Parse JSON response
+        data_list = response.json().get("value", [])
+
+        # Define CSV file name
+        csv_filename = "aternity_api_output.csv"
+
+        # Save data to CSV file
+        with open(csv_filename, mode="w", newline="", encoding="utf-8") as file:
+            writer = csv.writer(file)
+
+            # Write headers (modify based on API response)
+            headers = ["CPU Utilization Avg", "CPU Utilization Max", "Memory Utilization Avg", "Memory Utilization Max"]
+            writer.writerow(headers)
+
+            # Write data rows
+            for entry in data_list:
+                writer.writerow([
+                    entry.get("PRC_CPU_UTIL_AVG", "N/A"),
+                    entry.get("PRC_CPU_UTIL_MAX", "N/A"),
+                    entry.get("PRC_PHYSICAL_MEMORY_UTIL_AVG", "N/A"),
+                    entry.get("PRC_PHYSICAL_MEMORY_UTIL_MAX", "N/A")
+                ])
+
+        print(f"✅ Data saved successfully to {csv_filename}")
+
+    elif response.status_code == 401:
+        print("❌ Authentication Error: Invalid username or password. Please check credentials.")
+    elif response.status_code == 400:
+        print("❌ Bad Request: Check the API URL, parameters, and filters.")
+    else:
+        print(f"❌ API Request failed! Status Code: {response.status_code}")
+        print("Response:", response.text)
+
+except requests.exceptions.RequestException as e:
+    print(f"❌ API Request failed due to network or server error: {e}")
+
+except Exception as e:
+    print(f"❌ Unexpected Error: {e}")
