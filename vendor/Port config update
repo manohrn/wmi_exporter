@@ -1,0 +1,67 @@
+# =============================
+# BLACKBOX EXPORTER CONFIGURATION
+# =============================
+prometheus.exporter.blackbox "integrations_blackbox" {
+  config = "modules:\n  tcp_connect:\n    prober: tcp\n    timeout: 60s\n    concurrency: 200\n"
+  probe_timeout_offset = "15s"
+  targets = discovery.file.tcp.targets
+}
+
+# =============================
+# DISCOVERY: TARGETS FOR BLACKBOX EXPORTER
+# =============================
+discovery.file "tcp" {
+  files = ["blackbox_tcp.yaml"]
+}
+
+# =============================
+# RELABELING: ENSURE JOB NAME & DEBUG LABELS
+# =============================
+discovery.relabel "integrations_blackbox" {
+  targets = prometheus.exporter.blackbox.integrations_blackbox.targets
+
+  rule {
+    target_label = "job"
+    replacement  = "integrations/blackbox_tcp"
+  }
+
+  # Add debug label to track failed probes
+  rule {
+    source_labels = ["__param_target"]
+    target_label  = "failed_target"
+    regex         = ".*"
+  }
+}
+
+# =============================
+# SCRAPE CONFIGURATION
+# =============================
+prometheus.scrape "integrations_blackbox" {
+  targets = discovery.relabel.integrations_blackbox.output
+  forward_to = [prometheus.remote_write.integrations.receiver]
+  job_name = "integrations/blackbox_tcp"
+  scrape_interval = "120s"  # Reduced interval for better real-time data
+  scrape_timeout = "60s"  # Increased timeout to handle slow responses
+}
+
+# =============================
+# PROMETHEUS REMOTE WRITE CONFIG (Optimized)
+# =============================
+prometheus.remote_write "integrations" {
+  endpoint {
+    url = "http://proxy.wellsfargo.com:8080"
+
+    basic_auth {
+      username = ""
+      password = ""
+    }
+
+    proxy_url = "http://proxy.wellsfargo.com:8080"
+
+    queue_config {
+      capacity = 5000  # Increased to prevent dropped metrics
+      max_shards = 10  # More shards to improve write efficiency
+      max_samples_per_send = 1000  # Better batch efficiency
+    }
+  }
+}
