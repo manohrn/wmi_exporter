@@ -1,0 +1,50 @@
+import requests
+import csv
+import json
+from requests.auth import HTTPBasicAuth
+
+# Aternity API details
+ATERNITY_SERVER = "https://<YOUR_ATERNITY_SERVER>"
+API_ENDPOINT = "/api/v2/applications"
+USERNAME = "YOUR_USERNAME"  # Replace with your Aternity username
+PASSWORD = "YOUR_PASSWORD"  # Replace with your Aternity password
+
+# Set API URL
+url = f"{ATERNITY_SERVER}{API_ENDPOINT}"
+
+# Make API request with Basic Authentication
+try:
+    response = requests.get(url, auth=HTTPBasicAuth(USERNAME, PASSWORD), headers={"Content-Type": "application/json"})
+    response.raise_for_status()  # Raise an error if the request fails
+
+    # Parse JSON response
+    applications_data = response.json()
+
+    # Output CSV file
+    csv_filename = "aterity_monitored_applications.csv"
+
+    # Extract required fields
+    with open(csv_filename, mode="w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+
+        # Define column headers
+        headers = ["Application Name", "Application Type", "Monitored", "Last Used", "Version", "Category"]
+        writer.writerow(headers)
+
+        # Iterate and write application data
+        for app in applications_data.get("applications", []):
+            writer.writerow([
+                app.get("app_name", "N/A"),
+                app.get("app_type", "N/A"),
+                "Yes" if app.get("monitored", False) else "No",
+                app.get("last_used", "N/A"),
+                app.get("version", "N/A"),
+                app.get("category", "N/A")
+            ])
+
+    print(f"✅ CSV report generated successfully: {csv_filename}")
+
+except requests.exceptions.RequestException as e:
+    print(f"❌ API Request failed: {e}")
+except Exception as e:
+    print(f"❌ Error: {e}")
