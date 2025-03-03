@@ -1,0 +1,45 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: 'gateway'
+          scrape_interval: 10s
+          static_configs:
+            - targets: ['localhost:8889']
+
+processors:
+  batch:
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 25
+
+exporters:
+  signalfx:
+    access_token: "<YOUR_SPLUNK_ACCESS_TOKEN>"
+    realm: "us1"  # Change based on your Splunk Observability Cloud realm
+    ingest_url: "https://ingest.us1.signalfx.com"
+    api_url: "https://api.us1.signalfx.com"
+
+  logging:
+    loglevel: debug
+
+extensions:
+  health_check:
+  pprof:
+  zpages:
+
+service:
+  extensions: [health_check, pprof, zpages]
+  pipelines:
+    metrics:
+      receivers: [otlp, prometheus]
+      processors: [memory_limiter, batch]
+      exporters: [signalfx, logging]
