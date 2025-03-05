@@ -1,0 +1,16 @@
+[Unit]
+Description=Splunk OpenTelemetry Collector
+After=network.target
+
+[Service]
+Type=simple
+Environment="SPLUNK_REALM=us0"  # Change to your Splunk realm
+Environment="SPLUNK_ACCESS_TOKEN=your-access-token"  # Replace with your actual token
+ExecStart=/usr/bin/otelcol --config /etc/otel/collector.yaml
+Restart=always
+User=root
+Group=root
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
