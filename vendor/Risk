@@ -1,0 +1,16 @@
+Risk Area,Potential Impact,Mitigation Plan
+Infrastructure Readiness,Delay in provisioning resources, impacting deployment timelines.,✅ Pre-provision all required infrastructure before deployment begins.  ✅ Ensure security teams review and approve access in advance.
+Third-Party Dependencies,API changes or integration delays with external systems.,✅ Early engagement with external vendors and teams.  ✅ Set up fallback mechanisms where possible.
+Security & Compliance Approvals,Additional compliance/security testing could delay go-live.,✅ Secure early approvals and conduct pre-assessments with InfoSec.  ✅ Parallelize compliance reviews with development work.
+Testing & Validation Time Constraints,Limited testing time may lead to issues post-migration.,✅ Parallel migration and validation testing to maximize efficiency.  ✅ Automate test cases where possible to speed up validation.
+Stakeholder Sign-offs,Delays in approvals may block go-live.,✅ Pre-align key stakeholders with weekly progress updates.  ✅ Secure sign-offs incrementally rather than at the final stage.
+Firewall Restrictions Blocking ICMP & TCP Requests,Blackbox Exporter unable to probe targets due to blocked firewall rules, leading to incomplete monitoring.,✅ Identify required ICMP and TCP ports early in the project.  ✅ Work with network/security teams to create and validate firewall rules.  ✅ Conduct pre-deployment network testing to confirm connectivity.  ✅ Automate firewall rule verification during infrastructure setup.
+
+
+Risk Area,Potential Impact,Mitigation Plan
+Infrastructure Readiness,Delay in provisioning resources, impacting deployment timelines.,✅ Pre-provision all required infrastructure before deployment begins.  ✅ Ensure security teams review and approve access in advance.
+Third-Party Dependencies,API changes or integration delays with external systems.,✅ Early engagement with external vendors and teams.  ✅ Set up fallback mechanisms where possible.
+Security & Compliance Approvals,Additional compliance/security testing could delay go-live.,✅ Secure early approvals and conduct pre-assessments with InfoSec.  ✅ Parallelize compliance reviews with development work.
+Testing & Validation Time Constraints,Limited testing time may lead to issues post-migration.,✅ Parallel migration and validation testing to maximize efficiency.  ✅ Automate test cases where possible to speed up validation.
+Stakeholder Sign-offs,Delays in approvals may block go-live.,✅ Pre-align key stakeholders with weekly progress updates.  ✅ Secure sign-offs incrementally rather than at the final stage.
+Firewall Restrictions Blocking ICMP & TCP Requests,Blackbox Exporter unable to probe targets due to blocked firewall rules, leading to incomplete monitoring.,✅ Identify required ICMP and TCP ports early in the project.  ✅ Work with network/security teams to create and validate firewall rules.  ✅ Conduct pre-deployment network testing to confirm connectivity.  ✅ Automate firewall rule verification during infrastructure setup.
