@@ -1,0 +1,118 @@
+# =====================
+# 1️⃣ Clustering Configuration
+# =====================
+clustering {
+  enabled = true
+  advertise_address = "<NODE_IP>:7946"
+  join_addresses = ["192.168.1.1:7946", "192.168.1.2:7946", "192.168.1.3:7946"]
+  name = "production-cluster"
+  heartbeat_interval = "2s"
+  reconnection_interval = "5s"
+  gossip_interval = "3s"
+}
+
+# =====================
+# 2️⃣ File-Based Target Discovery (Per Frequency)
+# =====================
+discovery.file "tcp_300s" {
+  files = ["discovery_files/targets_300.yaml"]
+  refresh_interval = "1m"
+}
+
+discovery.file "tcp_180s" {
+  files = ["discovery_files/targets_180.yaml"]
+  refresh_interval = "1m"
+}
+
+# =====================
+# 3️⃣ Multiple Blackbox Exporter Instances (TCP Monitoring)
+# =====================
+prometheus.exporter.blackbox "blackbox_tcp_300s" {
+  config = <<EOT
+modules:
+  tcp_connect:
+    prober: tcp
+    timeout: 10s
+EOT
+  targets = discovery.file.tcp_300s.targets
+  extra_args = ["--web.max-concurrent=500"]  # Allow 500 concurrent TCP probes
+}
+
+prometheus.exporter.blackbox "blackbox_tcp_180s" {
+  config = <<EOT
+modules:
+  tcp_connect:
+    prober: tcp
+    timeout: 10s
+EOT
+  targets = discovery.file.tcp_180s.targets
+  extra_args = ["--web.max-concurrent=500"]
+}
+
+# =====================
+# 4️⃣ Prometheus Scraping Configuration
+# =====================
+prometheus.scrape "blackbox_tcp_scrape_300s" {
+  clustering {
+    enabled = true
+  }
+  targets = discovery.file.tcp_300s.targets
+  forward_to = [prometheus.remote_write.default.receiver]
+  job_name = "blackbox_tcp_300s"
+  scrape_interval = "300s"
+  scrape_timeout = "10s"
+}
+
+prometheus.scrape "blackbox_tcp_scrape_180s" {
+  clustering {
+    enabled = true
+  }
+  targets = discovery.file.tcp_180s.targets
+  forward_to = [prometheus.remote_write.default.receiver]
+  job_name = "blackbox_tcp_180s"
+  scrape_interval = "180s"
+  scrape_timeout = "10s"
+}
+
+# =====================
+# 5️⃣ Remote Write Configuration (Optimized for High-Throughput)
+# =====================
+prometheus.remote_write "default" {
+  endpoint {
+    url = "https://prometheus.example.com/api/v1/write"
+    queue_config {
+      capacity = 10000
+      min_shards = 10
+      max_shards = 50
+      max_samples_per_send = 2000
+    }
+    basic_auth {
+      username = "admin"
+      password = "securepassword"
+    }
+  }
+}
+
+# =====================
+# 6️⃣ Security & Logging Configuration
+# =====================
+server {
+  http_listen_port = 8080
+  grpc_listen_port = 9095
+  basic_auth {
+    username = "admin"
+    password = "securepassword"
+  }
+}
+
+logging {
+  level = "info"
+  format = "json"
+  output = "stdout"
+}
+
+logging "blackbox_debug" {
+  level = "debug"
+  format = "json"
+  output = "/var/log/alloy/blackbox_debug.log"
+}
