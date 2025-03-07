@@ -1,0 +1,33 @@
+import pandas as pd
+import yaml
+import os
+
+# Load the CSV file
+csv_file = "port_monitors.csv"  # Update this with your actual file path
+df = pd.read_csv(csv_file)
+
+# Output directory for YAML discovery files
+output_dir = "discovery_files"
+os.makedirs(output_dir, exist_ok=True)
+
+# Group by frequency and generate YAML files
+for freq, group in df.groupby("frequency"):
+    discovery_targets = []
+    
+    for _, row in group.iterrows():
+        target = f"{row['host']}:{row['port']}"
+        
+        # Convert all columns except 'host' and 'port' into labels
+        labels = {col: str(row[col]) for col in df.columns if col not in ["host", "port"]}
+        labels["probe"] = "tcp_connect"  # Adding probe type
+        
+        discovery_targets.append({"targets": [target], "labels": labels})
+
+    yaml_file_path = os.path.join(output_dir, f"targets_{freq}.yaml")
+    
+    with open(yaml_file_path, "w") as yaml_file:
+        yaml.dump(discovery_targets, yaml_file, default_flow_style=False)
+    
+    print(f"✅ Created {yaml_file_path}")
+
+print("🎯 YAML Discovery Files Successfully Generated!")
