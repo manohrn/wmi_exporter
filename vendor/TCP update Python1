@@ -1,0 +1,40 @@
+import csv
+import yaml
+import os
+
+# Define the input CSV file path
+csv_file = "port_monitors.csv"  # Update with your actual file path
+
+# Output directory for YAML discovery files
+output_dir = "discovery_files"
+os.makedirs(output_dir, exist_ok=True)
+
+# Read the CSV file and process it
+with open(csv_file, mode="r", encoding="utf-8") as file:
+    reader = csv.DictReader(file)  # Read CSV as a dictionary
+    frequency_groups = {}
+
+    # Group data by frequency
+    for row in reader:
+        freq = row["frequency"]
+        target = f"{row['host']}:{row['port']}"
+
+        # Convert all columns except 'host' and 'port' into labels
+        labels = {key: value for key, value in row.items() if key not in ["host", "port"]}
+        labels["probe"] = "tcp_connect"  # Add probe type label
+
+        # Append to the correct frequency group
+        if freq not in frequency_groups:
+            frequency_groups[freq] = []
+        frequency_groups[freq].append({"targets": [target], "labels": labels})
+
+# Generate YAML discovery files for each frequency
+for freq, targets in frequency_groups.items():
+    yaml_file_path = os.path.join(output_dir, f"targets_{freq}.yaml")
+
+    with open(yaml_file_path, "w", encoding="utf-8") as yaml_file:  # Set encoding to utf-8
+        yaml.dump(targets, yaml_file, default_flow_style=False, allow_unicode=True)
+
+    print(f"✅ Created {yaml_file_path}")
+
+print("🎯 YAML Discovery Files Successfully Generated!")
