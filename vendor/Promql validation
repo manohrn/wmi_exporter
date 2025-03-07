@@ -1,0 +1,4 @@
+count by (instance) (
+  (stddev_over_time((1 - (node_memory_SwapFree_bytes / node_memory_SwapTotal_bytes)) * 100 [24h]) == 0)
+  and (avg_over_time((1 - (node_memory_SwapFree_bytes / node_memory_SwapTotal_bytes)) * 100 [24h]) > 95)
+)
