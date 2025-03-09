@@ -1,0 +1,95 @@
+Integrating ThousandEyes with OpenTelemetry (OTel) enables a standardized, vendor-neutral approach to exporting telemetry data, facilitating seamless integration with various observability backends. As a Principal Engineer of Observability, follow these steps to set up this integration: ￼
+
+⸻
+
+1. Overview of ThousandEyes for OpenTelemetry
+
+ThousandEyes for OpenTelemetry provides machine-to-machine integration by exporting telemetry data in OTel format. This allows you to leverage frameworks widely used in the observability domain, such as Splunk, Grafana, and Honeycomb, to capture and analyze ThousandEyes data.  ￼
+
+⸻
+
+2. Prerequisites
+	•	ThousandEyes Account: Ensure you have an active ThousandEyes account. ￼
+	•	API Access: Obtain an API token from ThousandEyes for authentication. ￼
+	•	Observability Backend: Set up an OpenTelemetry-compatible backend (e.g., Splunk, Grafana).
+
+⸻
+
+3. Integration Steps
+
+Step 1: Create a Network Test in ThousandEyes
+
+Initiate a network test to generate telemetry data. This can be done via the ThousandEyes UI or API. For example, using the API: ￼
+
+curl -L 'https://api.thousandeyes.com/v6/tests/agent-to-server/new' \
+-H 'Content-Type: application/json' \
+-H 'Authorization: Bearer $BEARER_TOKEN' \
+-d '{
+      "interval": 60,
+      "agents": [{"agentId": 45}],
+      "testName": "OpenTelemetry Test",
+      "server": "www.google.com",
+      "port": 80,
+      "alertsEnabled": 0
+    }'
+
+This command creates a new agent-to-server test targeting “www.google.com” with a 60-second interval.  ￼
+
+Step 2: Create and Assign a Tag
+
+Tags in ThousandEyes are key-value pairs used to categorize tests. Create a tag and assign it to the desired test(s): ￼ ￼
+	1.	Create a Tag:
+
+curl --location \
+--request POST 'https://api.thousandeyes.com/v7/tags' \
+--header 'Authorization: Bearer $YOUR_OAUTH_TOKEN' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+              "key": "OTelKey",
+              "value": "OTelValue",
+              "objectType": "test",
+              "accessType": "all"
+            }'
+
+
+	2.	Assign the Tag to a Test:
+
+curl --location \
+--request POST 'https://api.thousandeyes.com/v7/tags/{TAG_ID}/assign' \
+--header 'Authorization: Bearer $YOUR_OAUTH_TOKEN' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+              "assignments": [{"id": "TEST_ID", "type": "test"}]
+            }'
+
+
+
+Replace {TAG_ID} and TEST_ID with the appropriate values.
+
+Step 3: Configure the OpenTelemetry Stream
+
+Set up a data stream to export telemetry data: ￼
+
+curl --location \
+--request POST 'https://api.thousandeyes.com/v7/stream' \
+--header 'Authorization: Bearer $YOUR_OAUTH_TOKEN' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+              "type": "opentelemetry",
+              "tagMatch": [{"key": "OTelKey", "value": "OTelValue", "objectType": "test"}],
+              "streamEndpointUrl": "https://your-otel-collector-endpoint",
+              "customHeaders": {"Authorization": "Bearer YOUR_OTEL_COLLECTOR_TOKEN"}
+            }'
+
+Ensure the streamEndpointUrl points to your OpenTelemetry collector’s endpoint, and the necessary authentication headers are included.  ￼
+
+⸻
+
+4. Considerations
+	•	Supported Test Types: ThousandEyes for OpenTelemetry supports various test types, including agent-to-server, HTTP server, and DNS server tests.  ￼
+	•	Data Security: Ensure that the streamEndpointUrl uses HTTPS and has a valid SSL/TLS certificate signed by a trusted Certificate Authority.  ￼
+	•	API Rate Limits: Be mindful of ThousandEyes API rate limits when configuring tests and streams.
+
+⸻
+
+For a visual walkthrough, consider watching the following demo:
