@@ -1,0 +1,240 @@
+Comprehensive Solution Design for Observability of Autosys & Applications
+
+Using Prometheus, Grafana, Splunk, and APM (Elastic APM / AppDynamics)
+
+⸻
+
+1. Overview
+
+This solution provides a complete observability stack for monitoring Autosys job scheduling and business applications by leveraging:
+	•	Prometheus & Grafana Agent → Collecting Autosys job metrics from Oracle DB
+	•	Splunk → Ingesting and analyzing Autosys job logs and application logs
+	•	Elastic APM / AppDynamics → Application Performance Monitoring (APM)
+	•	Grafana → Visualizing metrics and logs, setting up alerts
+
+⸻
+
+2. Architecture Diagram
+
+           +-----------------+        +------------------+        +------------------+
+           |  Autosys        |        |  Business App    |        | Oracle DB        |
+           |  Job Scheduler  |        |  (Java/.NET)     |        | (Job Data)       |
+           +-----------------+        +------------------+        +------------------+
+                    |                          |                           |
+  +-----------------+------------------+-------------------+----------------------+
+  |     Grafana Agent (Prometheus)      |      Log Forwarder (Splunk UF)          |
+  | (Scrapes metrics & logs)            | (Collects logs from Autosys & App)      |
+  +-----------------+------------------+-------------------+----------------------+
+           |                          |                  |
+           v                          v                  v
+   +------------------+        +-----------------+    +----------------------+
+   | Prometheus       |        | Splunk          |    | Elastic APM/AppD      |
+   | (Time-Series DB) |        | (Log Indexing)  |    | (APM Monitoring)      |
+   +------------------+        +-----------------+    +----------------------+
+           |                          |                  |
+           v                          v                  v
+   +----------------------+   +------------------+   +------------------+
+   | Grafana Dashboards   |   | Splunk Dashboard |   | APM Dashboards   |
+   +----------------------+   +------------------+   +------------------+
+
+
+
+⸻
+
+3. Key Metrics & SQL Queries for Autosys (Oracle DB)
+
+3.1 Job Execution Metrics
+
+Metric Name	Description	SQL Query
+Job Status (autosys_job_status)	Tracks job execution status (Success, Running, Failed, On Hold)	✅ Query Below
+Execution Time (autosys_job_runtime_seconds)	Job execution time in seconds	✅ Query Below
+Failed Job Count (autosys_job_failures)	Number of failed jobs in the last 24 hours	✅ Query Below
+Success Rate (autosys_job_success_rate)	Percentage of successfully completed jobs	✅ Query Below
+
+SQL Queries
+
+-- Job Status (1 = Success, 0 = Failure, 2 = Running, 3 = On Hold)
+SELECT job_name, 
+       CASE WHEN status = 'SU' THEN 1
+            WHEN status = 'FA' THEN 0
+            WHEN status = 'RU' THEN 2
+            WHEN status = 'OH' THEN 3
+            ELSE -1 END AS status
+FROM autosys_jobs
+WHERE last_start_time >= SYSDATE - INTERVAL '1' DAY;
+
+-- Job Execution Time (Seconds)
+SELECT job_name, 
+       (EXTRACT(SECOND FROM (end_time - start_time)) +
+        EXTRACT(MINUTE FROM (end_time - start_time)) * 60 +
+        EXTRACT(HOUR FROM (end_time - start_time)) * 3600) AS execution_time
+FROM autosys_jobs
+WHERE start_time >= SYSDATE - INTERVAL '1' DAY;
+
+-- Failed Job Count
+SELECT COUNT(*) AS failed_jobs
+FROM autosys_jobs
+WHERE status = 'FA' AND start_time >= SYSDATE - INTERVAL '1' DAY;
+
+-- Success Rate
+SELECT (COUNT(CASE WHEN status = 'SU' THEN 1 END) * 100.0) / COUNT(*) AS success_rate
+FROM autosys_jobs
+WHERE start_time >= SYSDATE - INTERVAL '1' DAY;
+
+
+
+⸻
+
+3.2 Job Scheduling & Queue Metrics
+
+Metric Name	Description	SQL Query
+Job Queue Time (autosys_job_queue_time_seconds)	Time spent in queue before execution	✅ Query Below
+Running Jobs (autosys_jobs_running)	Number of jobs currently running	✅ Query Below
+Jobs On Hold (autosys_jobs_on_hold)	Jobs currently on hold	✅ Query Below
+
+SQL Queries
+
+-- Job Queue Time (Seconds)
+SELECT job_name, 
+       (EXTRACT(SECOND FROM (start_time - scheduled_time)) +
+        EXTRACT(MINUTE FROM (start_time - scheduled_time)) * 60 +
+        EXTRACT(HOUR FROM (start_time - scheduled_time)) * 3600) AS queue_time
+FROM autosys_jobs
+WHERE start_time >= SYSDATE - INTERVAL '1' DAY;
+
+-- Running Jobs
+SELECT COUNT(*) AS running_jobs
+FROM autosys_jobs
+WHERE status = 'RU';
+
+-- Jobs On Hold
+SELECT COUNT(*) AS on_hold_jobs
+FROM autosys_jobs
+WHERE status = 'OH';
+
+
+
+⸻
+
+3.3 Resource Utilization Metrics
+
+Metric Name	Description	SQL Query
+CPU Usage per Job (autosys_job_cpu_usage)	CPU percentage per job	✅ Query Below
+Memory Usage per Job (autosys_job_memory_usage)	Memory in MB per job	✅ Query Below
+Disk I/O per Job (autosys_job_disk_io)	Disk read/write operations per job	✅ Query Below
+
+SQL Queries
+
+-- CPU Usage per Job
+SELECT job_name, cpu_usage
+FROM autosys_jobs
+WHERE start_time >= SYSDATE - INTERVAL '1' DAY;
+
+-- Memory Usage per Job
+SELECT job_name, memory_usage
+FROM autosys_jobs
+WHERE start_time >= SYSDATE - INTERVAL '1' DAY;
+
+-- Disk I/O per Job
+SELECT job_name, disk_io
+FROM autosys_jobs
+WHERE start_time >= SYSDATE - INTERVAL '1' DAY;
+
+
+
+⸻
+
+3.4 Autosys Infrastructure Metrics
+
+Metric Name	Description	SQL Query
+Autosys Agent Health (autosys_agent_status)	Status of Autosys agents (1 = Up, 0 = Down)	✅ Query Below
+Autosys Server Load (autosys_server_load)	CPU load on Autosys server	✅ Query Below
+
+SQL Queries
+
+-- Autosys Agent Health
+SELECT agent_name, status
+FROM autosys_agents;
+
+-- Autosys Server Load
+SELECT cpu_load FROM autosys_server;
+
+
+
+⸻
+
+4. Dashboard & Alerts
+
+Grafana Dashboards
+	•	Job Execution Trends (autosys_job_runtime_seconds)
+	•	Failed Jobs Count (autosys_job_failures)
+	•	Queue Delays (autosys_job_queue_time_seconds)
+	•	Resource Utilization (autosys_job_cpu_usage, autosys_job_memory_usage)
+
+Splunk Alerts
+	•	Alert for Failed Jobs
+
+index=autosys_logs "FAILED"
+
+
+	•	Alert for High Execution Time
+
+index=autosys_logs execution_time > 300
+
+
+
+⸻
+
+5. Conclusion
+
+This solution ensures full observability of Autosys and applications using Prometheus, Grafana, Splunk, and APM. It enables:
+✅ Real-time monitoring of Autosys jobs
+✅ Log-based troubleshooting using Splunk
+✅ Application performance tracking with APM
+
+Would you like assistance with Grafana dashboards or alert configurations?
+
+from flask import Flask, Response
+from prometheus_client import Gauge, generate_latest
+import cx_Oracle
+import os
+
+app = Flask(__name__)
+
+# Define Prometheus metrics
+job_status = Gauge("autosys_job_status", "Status of Autosys jobs", ["job_name"])
+job_runtime = Gauge("autosys_job_runtime_seconds", "Execution time of Autosys jobs", ["job_name"])
+job_failures = Gauge("autosys_job_failures", "Total failed Autosys jobs", ["job_name"])
+
+# Oracle DB credentials
+DB_USER = os.getenv("DB_USER", "autosys_user")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "autosys_password")
+DB_DSN = os.getenv("DB_DSN", "your_oracle_db_connection_string")
+
+def fetch_autosys_metrics():
+    """Fetch Autosys job metrics from Oracle DB"""
+    try:
+        with cx_Oracle.connect(DB_USER, DB_PASSWORD, DB_DSN) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT job_name, status, start_time, end_time FROM autosys_jobs WHERE start_time >= SYSDATE - INTERVAL '1' DAY")
+
+            for job_name, status, start_time, end_time in cursor.fetchall():
+                runtime = (end_time - start_time).total_seconds() if end_time and start_time else 0
+                status_metric = 1 if status == 'SU' else 0
+                job_status.labels(job_name=job_name).set(status_metric)
+                job_runtime.labels(job_name=job_name).set(runtime)
+
+                if status == 'FA':
+                    job_failures.labels(job_name=job_name).inc()
+
+    except Exception as e:
+        print(f"Error fetching Autosys metrics: {e}")
+
+@app.route('/metrics')
+def metrics():
+    """Expose Prometheus metrics"""
+    fetch_autosys_metrics()
+    return Response(generate_latest(), mimetype="text/plain")
+
+if __name__ == '__main__':
+    app.run(host="0.0.0.0", port=8000)
