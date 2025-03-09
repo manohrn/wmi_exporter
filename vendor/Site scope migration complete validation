@@ -1,0 +1,210 @@
+Here’s a comprehensive validation process using PromQL to ensure that all targets are being probed and to analyze failures vs. successes in depth.
+
+⸻
+
+1️⃣ Validate if All Targets Are Being Probed
+
+This helps confirm that all expected targets are present in the probe_success metric.
+
+Step 1: Count the Number of Probed Targets
+
+count by (instance) (probe_success)
+
+	•	This returns the number of instances (targets) that are being probed.
+	•	Compare this count with your expected number of targets (e.g., 5000).
+
+Step 2: Check for Missing Targets
+
+To find targets that should be probed but are missing, use:
+
+count by (instance) (probe_success offset 10m) - count by (instance) (probe_success)
+
+	•	This helps detect targets that disappeared in the last 10 minutes.
+
+To check which specific targets are missing, compare them against up:
+
+count by (instance) (up) - count by (instance) (probe_success)
+
+	•	If up is present but probe_success is missing, it means those targets are not being probed.
+
+⸻
+
+2️⃣ Check Probe Success vs. Failures
+
+This step determines how many probes succeeded vs. failed.
+
+Step 1: Count Total Successes
+
+count by (instance) (probe_success == 1)
+
+	•	This gives the count of successful probes.
+
+Step 2: Count Total Failures
+
+count by (instance) (probe_success == 0)
+
+	•	This gives the count of failed probes.
+
+Step 3: Calculate Success Rate
+
+To calculate the percentage of successful probes, use:
+
+(sum(probe_success) / count(probe_success)) * 100
+
+	•	If this percentage is dropping, some targets are failing intermittently.
+
+⸻
+
+3️⃣ Investigate Trends Over Time
+
+Understanding how probe success changes over time can reveal patterns of failure.
+
+Step 1: Success Rate Over Time
+
+sum by (instance) (increase(probe_success[10m])) / count_over_time(probe_success[10m]) * 100
+
+	•	This shows the success rate in the last 10 minutes for each instance.
+
+Step 2: Failure Rate Over Time
+
+sum by (instance) (increase(probe_success[10m] == 0))
+
+	•	This tells how many failures happened in the last 10 minutes.
+
+Step 3: Identify Flapping (Unstable) Targets
+
+sum by (instance) (changes(probe_success[10m]))
+
+	•	A high number here means the target is fluctuating between success and failure.
+
+⸻
+
+4️⃣ Deep Dive into Problematic Targets
+
+To identify and analyze specific targets that are experiencing issues:
+
+Step 1: Find the Most Frequently Failing Targets
+
+topk(10, count_over_time(probe_success == 0)[10m])
+
+	•	This lists the top 10 targets with the most failures in the last 10 minutes.
+
+Step 2: Find Targets That Have Been Down for a Long Time
+
+avg_over_time(probe_success[1h]) == 0
+
+	•	This lists targets that have failed for the entire past hour.
+
+Step 3: Compare probe_success and up
+
+To check if any targets are up but failing probes:
+
+probe_success == 0 and up == 1
+
+	•	If this query returns results, it means the target is reachable but the probe is failing.
+
+⸻
+
+5️⃣ Investigate Latency and Timeout Issues
+
+If some targets are failing intermittently, check for probe latency issues.
+
+Step 1: Monitor Probe Response Time
+
+histogram_quantile(0.95, rate(probe_duration_seconds_bucket[5m]))
+
+	•	This shows the 95th percentile of probe response time in the last 5 minutes.
+
+Step 2: Identify Targets with High Latency
+
+topk(10, avg_over_time(probe_duration_seconds[10m]))
+
+	•	Lists top 10 targets with the highest response time over the last 10 minutes.
+
+Step 3: Check for Targets Timing Out
+
+If probes are failing due to timeouts, use:
+
+count by (instance) (probe_duration_seconds > 5)
+
+	•	This counts targets that took longer than 5 seconds to respond.
+
+⸻
+
+6️⃣ Automate Detection of Missing Targets
+
+To create an alert for missing probes:
+
+(absent(probe_success) == 1)
+
+	•	This will trigger an alert if any target is missing from probe_success.
+
+To log missing targets, compare:
+
+count by (instance) (up) - count by (instance) (probe_success)
+
+	•	If up is present but probe_success is missing, some targets are not probed.
+
+⸻
+
+📊 Summary of Key PromQL Queries
+
+Check	PromQL Query
+Total Probed Targets	count by (instance) (probe_success)
+Missing Targets	count by (instance) (up) - count by (instance) (probe_success)
+Total Probe Successes	count by (instance) (probe_success == 1)
+Total Probe Failures	count by (instance) (probe_success == 0)
+Success Rate (%)	(sum(probe_success) / count(probe_success)) * 100
+Flapping Targets	sum by (instance) (changes(probe_success[10m]))
+Most Frequently Failing Targets	topk(10, count_over_time(probe_success == 0)[10m])
+High Latency Targets	topk(10, avg_over_time(probe_duration_seconds[10m]))
+Targets Timing Out	count by (instance) (probe_duration_seconds > 5)
+
+
+
+⸻
+
+Next Steps
+	1.	Visualize these metrics in Grafana using time-series panels for:
+	•	probe_success
+	•	up
+	•	probe_duration_seconds
+	•	changes(probe_success[10m])
+	2.	Set up alerts for:
+	•	Missing targets (absent(probe_success))
+	•	High latency (probe_duration_seconds > 5)
+	•	Unstable targets (changes(probe_success[10m]) > threshold)
+
+
+I’ll generate a Grafana dashboard JSON template that you can import directly into Grafana. The dashboard will include:
+
+📊 Panels Included
+	1.	Total Probed Targets → Count of targets with probe_success
+	2.	Missing Targets → Targets that exist in up but not in probe_success
+	3.	Probe Success vs. Failures → Success/failure count over time
+	4.	Probe Success Rate (%) → Success percentage trend
+	5.	Unstable (Flapping) Targets → Targets frequently switching between success/failure
+	6.	Top Failing Targets → Most frequently failing targets in the last 10 minutes
+	7.	Probe Latency Distribution → 95th percentile of probe_duration_seconds
+	8.	High Latency Targets → Targets with high response times
+	9.	Targets Timing Out → Targets with excessive response time (>5s)
+
+Let me generate the JSON template now.
+I have generated the Grafana dashboard JSON file. You can download it using the link below and import it into Grafana.
+
+Download Grafana Dashboard JSON
+
+
+🚀 How to Import into Grafana
+	1.	Open Grafana and go to Dashboards → Manage.
+	2.	Click Import.
+	3.	Upload the downloaded JSON file.
+	4.	Select your Prometheus datasource when prompted.
+	5.	Click Import.
+
+This dashboard will help you track probe successes, failures, missing targets, flapping instances, and latency issues.
+
+Let me know if you need any modificati
+
+{"dashboard": {"id": null, "uid": null, "title": "Probe Success & Failure Analysis", "timezone": "browser", "schemaVersion": 30, "version": 1, "panels": [{"title": "Total Probed Targets", "type": "stat", "datasource": "Prometheus", "targets": [{"expr": "count(probe_success)", "legendFormat": "Total Probed Targets"}], "gridPos": {"x": 0, "y": 0, "w": 6, "h": 3}}, {"title": "Missing Targets", "type": "stat", "datasource": "Prometheus", "targets": [{"expr": "count(up) - count(probe_success)", "legendFormat": "Missing Targets"}], "gridPos": {"x": 6, "y": 0, "w": 6, "h": 3}}, {"title": "Probe Success vs. Failures", "type": "graph", "datasource": "Prometheus", "targets": [{"expr": "count(probe_success == 1)", "legendFormat": "Success"}, {"expr": "count(probe_success == 0)", "legendFormat": "Failures"}], "gridPos": {"x": 0, "y": 3, "w": 12, "h": 6}}, {"title": "Probe Success Rate (%)", "type": "stat", "datasource": "Prometheus", "targets": [{"expr": "(sum(probe_success) / count(probe_success)) * 100", "legendFormat": "Success Rate"}], "gridPos": {"x": 0, "y": 9, "w": 6, "h": 3}}, {"title": "Unstable (Flapping) Targets", "type": "table", "datasource": "Prometheus", "targets": [{"expr": "sum by (instance) (changes(probe_success[10m]))", "legendFormat": "{{instance}}"}], "gridPos": {"x": 6, "y": 9, "w": 6, "h": 3}}, {"title": "Top Failing Targets (Last 10 min)", "type": "table", "datasource": "Prometheus", "targets": [{"expr": "topk(10, count_over_time(probe_success == 0)[10m])", "legendFormat": "{{instance}}"}], "gridPos": {"x": 0, "y": 12, "w": 12, "h": 6}}, {"title": "Probe Latency Distribution (95th percentile)", "type": "graph", "datasource": "Prometheus", "targets": [{"expr": "histogram_quantile(0.95, rate(probe_duration_seconds_bucket[5m]))", "legendFormat": "Latency (95th Percentile)"}], "gridPos": {"x": 0, "y": 18, "w": 12, "h": 6}}, {"title": "High Latency Targets", "type": "table", "datasource": "Prometheus", "targets": [{"expr": "topk(10, avg_over_time(probe_duration_seconds[10m]))", "legendFormat": "{{instance}}"}], "gridPos": {"x": 0, "y": 24, "w": 12, "h": 6}}, {"title": "Targets Timing Out (>5s)", "type": "stat", "datasource": "Prometheus", "targets": [{"expr": "count by (instance) (probe_duration_seconds > 5)", "legendFormat": "Timeouts"}], "gridPos": {"x": 6, "y": 30, "w": 6, "h": 3}}]}, "overwrite": true}
+Would you like a Grafana JSON dashboard template to import directly?
