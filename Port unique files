@@ -1,0 +1,40 @@
+import csv
+import yaml
+import sys
+
+# Define input CSV and output YAML file paths
+csv_file = "port_monitors_ss_config.csv"  # Update this to your actual CSV file path
+yaml_file = "blackbox_tcp.yaml"
+
+# Read CSV data with UTF-8 and ignore errors, while removing duplicates
+targets = []
+seen_names = set()  # Set to track unique names
+
+with open(csv_file, mode="r", encoding="utf-8", errors="ignore") as file:
+    reader = csv.DictReader(file)
+    for row in reader:
+        name = row["name"]
+        if name not in seen_names:
+            seen_names.add(name)  # Add name to the set to track uniqueness
+            targets.append({
+                "targets": [{row["host"]: [row["port"]]}],
+                "labels": {
+                    "type": row["type"],
+                    "group": row["group"],
+                    "host": row["host"],
+                    "port": row["port"],
+                    "frequency": str(row["frequency"]),
+                    "error_frequency": str(row["err_freq"]),
+                    "enabled": str(row["enabled"]),
+                    "timeout": str(row["timeout"])
+                }
+            })
+
+# Write to YAML file with UTF-8 encoding
+with open(yaml_file, mode="w", encoding="utf-8", errors="ignore") as file:
+    yaml.dump(targets, file, default_flow_style=False)
+
+# Print message with UTF-8 handling
+sys.stdout.reconfigure(encoding="utf-8")
+
+print(f"Discovery file '{yaml_file}' has been created successfully!")
