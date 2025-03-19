@@ -1,0 +1,10 @@
+label_replace(
+  custom_service_monitor_mapping_mssp, 
+  "name", "$1", "service_name", "(.*)"
+)
+and on (agent_hostname, name)
+(
+  windows_service_state{state="running", agent_hostname=~"(?i:[1-9A-Ha-h].*)"} == 0 
+  and on (name, agent_hostname) 
+  windows_service_start_mode{start_mode="auto", agent_hostname=~"(?i:[1-9A-Ha-h].*)"} == 1
+)
