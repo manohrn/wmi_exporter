@@ -1,44 +1,68 @@
 import requests
 import json
 import os
+import certifi
 
-# Replace with your actual API token and realm
-API_TOKEN = "d37LbKF84b5q7sWH43N1Q"  # Update with your token
-REALM = "us1"  # Change if different
-BASE_URL = f"https://api.{REALM}.signalfx.com/v2"
+# API endpoint and token (Replace with your actual values)
+API_URL = "https://api.us1.signalfx.com/v2/detector"
+API_TOKEN = "d37LbKF84b5q7sWH43N1Q"  # Replace with your actual token
 
-# Directory to store JSON files
-OUTPUT_DIR = "splunk_data"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-# Common headers
+# Headers
 HEADERS = {
-    "X-SF-Token": API_TOKEN,
+    "X-SF-TOKEN": API_TOKEN,
     "Content-Type": "application/json"
 }
 
-def fetch_and_save_data(endpoint, filename, description):
-    """Fetch data from a given endpoint and save as JSON"""
-    url = f"{BASE_URL}/{endpoint}"
+# Output directory & file
+OUTPUT_DIR = "splunk_data"
+OUTPUT_FILE = os.path.join(OUTPUT_DIR, "detectors.json")
+
+# Ensure output directory exists
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# Disable SSL revocation check (equivalent to --ssl-no-revoke)
+VERIFY_SSL = certifi.where()  # Uses system CA certificates safely
+
+def fetch_detectors():
+    """Fetch detectors from Splunk Observability API and save to a local file."""
     try:
-        response = requests.get(url, headers=HEADERS)
-        response.raise_for_status()
-        data = response.json()
+        print("🔄 Fetching detectors...")
+        response = requests.get(API_URL, headers=HEADERS, verify=VERIFY_SSL, timeout=30)
+        response.raise_for_status()  # Raise HTTP errors (4xx, 5xx)
 
-        # Save to file
-        filepath = os.path.join(OUTPUT_DIR, filename)
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4)
+        # Save response to a file
+        with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
+            json.dump(response.json(), f, indent=4, ensure_ascii=False)
 
-        print(f"✅ Successfully saved {description} to {filepath}")
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Failed to fetch {description}: {e}")
+        print(f"✅ Successfully saved detectors to {OUTPUT_FILE}")
 
-# Fetch and save detectors
-fetch_and_save_data("detector", "detectors.json", "detectors")
+    except requests.exceptions.Timeout:
+        print("⏳ Error: Request timed out. Try increasing the timeout or check your internet connection.")
 
-# Fetch and save alerts (detector rules)
-fetch_and_save_data("detectorrule", "alerts.json", "alert rules")
+    except requests.exceptions.SSLError:
+        print("🔒 SSL Error: Certificate verification failed. Try disabling SSL verification (not recommended for production).")
 
-# Fetch and save webhook integrations
-fetch_and_save_data("integration", "webhooks.json", "webhook integrations")
+    except requests.exceptions.HTTPError as http_err:
+        if response.status_code == 401:
+            print("🚨 Authentication Error (401): Invalid API token or insufficient permissions.")
+        elif response.status_code == 403:
+            print("🚫 Forbidden (403): Your API token does not have access to this resource.")
+        elif response.status_code == 404:
+            print("❌ Not Found (404): The requested API endpoint does not exist.")
+        elif response.status_code == 429:
+            print("⚠️ Rate Limit Exceeded (429): Too many requests. Try again later.")
+        elif response.status_code == 500:
+            print("💥 Server Error (500): Splunk Observability Cloud is experiencing issues.")
+        elif response.status_code == 504:
+            print("⏳ Gateway Timeout (504): API is taking too long to respond.")
+        else:
+            print(f"❌ HTTP Error {response.status_code}: {http_err}")
+
+    except requests.exceptions.RequestException as req_err:
+        print(f"🔴 Unexpected Error: {req_err}")
+
+    except UnicodeEncodeError:
+        print("📝 Unicode Encoding Error: Ensure UTF-8 encoding is used when saving the response.")
+
+if __name__ == "__main__":
+    fetch_detectors()
