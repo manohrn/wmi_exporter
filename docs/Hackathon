@@ -1,0 +1,486 @@
+AI-Powered Email Triage System for Financial Services
+
+In this guide, we will build a GenAI-based email triage system for a financial services use case. The system will automatically ingest incoming emails with attachments, extract relevant information, classify the request using GPT-4, and route it to the appropriate team. We will walk through the solution architecture and provide production-grade Python scripts for each component, including email parsing, attachment text extraction (with OCR for scans), GPT-4 prompt design for classification and attribute extraction, rule-based routing, and integration with a mock ticketing service. We’ll also cover handling multi-intent emails via prompt chaining, implementing confidence scoring, error handling, feedback capture for model improvement, deduplication of email threads, and prioritizing email body content over attachments.
+Overview of the Triage System Architecture
+
+System Workflow: An incoming email (with subject, body, and attachments) is passed through several stages:
+Email Ingestion & Parsing – The raw email content is parsed to retrieve the subject, body text, metadata (sender, etc.), and any attachments (PDFs, Word docs, images, etc.).
+Attachment Text Extraction – Attachments are processed to extract text. PDFs and images may require OCR if they are scanned; documents like Word or PDF with embedded text are parsed for text.
+GPT-4 Classification & Extraction – The email body text (and attachment text, if any) are fed into an OpenAI GPT-4 model. The model is prompted to identify the request type and sub-type, and to extract structured attributes (e.g. account number, transaction amount, urgency flag, etc.). For emails containing multiple requests or ambiguous wording, we use prompt chaining to clarify or split intents.
+Routing Logic – Based on the classified request type and confidence, a set of rules determines which team or queue (e.g. Identity & Access Management, Operations, Customer Service) should handle the request. We also assign a confidence score to the routing decision.
+Service Desk Integration – The system creates a ticket or forwards the request to a mock service platform or queue, simulating integration with an enterprise workflow (like creating a ServiceNow ticket or sending to a specific department’s inbox).
+Feedback & Deduplication – The system handles errors and logs them. It captures feedback for continuous improvement (e.g. if a human agent corrects the classification, we store that for retraining). It also detects duplicate or threaded emails (for example, a forwarded or replied email that’s already been processed) to avoid creating duplicate tickets.
+Below is a high-level schematic of the process, from email ingestion to routing: Figure: High-level architecture of the GenAI Email Triage System. Emails are parsed and combined with attachments, run through GPT-4 for classification and data extraction, then routed to the appropriate handler with logging and feedback.​
+BLOG.TOBIASZWINGMANN.COM
+1. Email Ingestion and Parsing
+
+First, we need to ingest raw emails. In a production scenario, this could be pulling from an email server via IMAP or an API. For simplicity, we'll assume we have the raw email content (e.g., as an RFC822 formatted string or file). Python’s built-in email library can parse MIME emails into an EmailMessage object structure​
+DOCS.PYTHON.ORG
+. This object allows us to easily get the subject, body, and attachments. Let's write a function to parse a raw email (string or bytes) into structured parts: subject, body text, and attachments. We will handle both plain text and HTML bodies, and extract attachments into memory. We use the email.message_from_bytes parser with policy=default to get an EmailMessage object, then iterate through attachments using EmailMessage.iter_attachments()​
+CODERZCOLUMN.COM
+.
+from email import policy
+from email.parser import BytesParser, Parser
+from email.message import EmailMessage
+
+def parse_email(raw_email: bytes) -> dict:
+    """Parse a raw email and return subject, body text, and attachments."""
+    # Parse raw email bytes to an EmailMessage object
+    msg: EmailMessage = BytesParser(policy=policy.default).parsebytes(raw_email)
+    
+    # Extract email metadata and content
+    subject = msg.get('Subject', '')
+    sender = msg.get('From', '')
+    to = msg.get('To', '')
+    date = msg.get('Date', '')
+    
+    # Get the email body (prefer plain text over HTML)
+    body_text = ""
+    if msg.is_multipart():
+        # If multipart, get the plain text body part
+        for part in msg.walk():
+            ctype = part.get_content_type()
+            disp = part.get_content_disposition()
+            if disp is None and ctype == 'text/plain':
+                body_text = part.get_content()  # get_content decodes base64/quoted content
+                break
+        if not body_text:
+            # Fallback to getting the body (could be HTML if plain not found)
+            text_part = msg.get_body(preferencelist=('plain', 'html'))
+            if text_part:
+                body_text = text_part.get_content()
+    else:
+        # Not multipart – the whole message is body
+        body_text = msg.get_content()
+    
+    # Extract attachments (filename, content_type, data bytes)
+    attachments = []
+    for attachment in msg.iter_attachments():
+        filename = attachment.get_filename()
+        content_type = attachment.get_content_type()
+        try:
+            data = attachment.get_content()  # will return bytes for binary types
+        except:
+            data = attachment.get_payload(decode=True)  # fallback for older API
+        attachments.append({
+            "filename": filename,
+            "content_type": content_type,
+            "data": data
+        })
+    
+    return {
+        "subject": subject,
+        "from": sender,
+        "to": to,
+        "date": date,
+        "body_text": body_text,
+        "attachments": attachments
+    }
+Explanation: We use BytesParser with policy=default to properly handle MIME decoding. The EmailMessage API makes it easy to navigate the email structure. We prefer text/plain content for the body. The code checks each part – if a part has no Content-Disposition (i.e., it's inline) and content type is text/plain, we take that as the email body. If the email is HTML-only, we fall back to HTML content and still capture it (in a real system, we might strip HTML tags). Attachments are any part with a content disposition of attachment. The iter_attachments() method conveniently yields those parts​
+CODERZCOLUMN.COM
+. We collect each attachment’s filename, MIME type, and raw bytes (decoding from base64 if necessary via get_content() or get_payload(decode=True)). We now have the email broken down into components. For example:
+raw_email = b"..."  # raw email bytes from file or server
+email_data = parse_email(raw_email)
+print("Subject:", email_data["subject"])
+print("Body:", email_data["body_text"])
+for att in email_data["attachments"]:
+    print(f"Attachment: {att['filename']} ({att['content_type']}, {len(att['data'])} bytes)")
+This would print the subject, body text, and list attachments with their types and sizes.
+2. Attachment Text Extraction (PDF, Word, Images)
+
+Attachments can be in various formats. We need to extract text content from them for the AI model to understand the full context. We’ll handle the common cases:
+PDF files: PDFs might contain selectable text or just scanned images. We can use PyMuPDF (fitz) to extract text from text-based PDFs​
+GEEKSFORGEEKS.ORG
+. If PyMuPDF returns an empty string or if the PDF is a scanned document, we fall back to OCR using pytesseract on each page image.
+Word documents (DOC/DOCX): For DOCX (the XML-based format), we can use the python-docx library or docx2txt to extract text. For older binary DOC or any format, a robust method is to use Apache Tika, which can handle many document formats and return text​
+MEDIUM.COM
+. We’ll demonstrate using Tika for generality.
+Images (PNG, JPEG, TIFF): Use pytesseract (Tesseract OCR) to extract text from images​
+GEEKSFORGEEKS.ORG
+.
+Other formats: (CSV, TXT, HTML, etc.) could be handled as needed (for instance, CSV might not need OCR, just decode to text).
+We will implement helper functions for each type of extraction, and a main extract_attachment_text function that checks the MIME type or file extension to route to the appropriate extractor. We’ll also ensure to prioritize email body content over attachment content when both are present – meaning our final prompt to GPT-4 will include the body text prominently and use attachment text as supplementary, unless the body is empty or says something like “see attached”. First, let's set up OCR for images and PDFs using pytesseract:
+import io
+from PIL import Image
+import pytesseract
+
+# Ensure Tesseract OCR is installed in the environment for pytesseract to work.
+# pytesseract.image_to_string will handle OCR on image data.
+
+def ocr_image_data(image_bytes: bytes) -> str:
+    """Extract text from image bytes using OCR."""
+    try:
+        image = Image.open(io.BytesIO(image_bytes))
+    except Exception as e:
+        print(f"Failed to open image for OCR: {e}")
+        return ""
+    # Perform OCR
+    text = pytesseract.image_to_string(image)
+    return text
+This ocr_image_data function takes raw image bytes and returns extracted text using Tesseract. It uses PIL (Image.open) and pytesseract.image_to_string​
+GEEKSFORGEEKS.ORG
+. For scanned PDFs, we will convert each page to an image and use the same function. Now, the PDF text extraction:
+import fitz  # PyMuPDF
+
+def extract_pdf_text(pdf_bytes: bytes) -> str:
+    """Extract text from PDF bytes. Use OCR if needed for scanned PDFs."""
+    text = ""
+    try:
+        # Open PDF from bytes
+        pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    except Exception as e:
+        print(f"PyMuPDF failed to open PDF: {e}")
+        return text
+    for page in pdf_doc:
+        page_text = page.get_text().strip()
+        if page_text:
+            # If we got text content, append it
+            text += page_text + "\n"
+        else:
+            # If no text on this page (possibly scanned image), use OCR on the image of the page
+            pix = page.get_pixmap()  # render page to image
+            img_bytes = pix.pil_tobytes()  # get image bytes
+            ocr_text = pytesseract.image_to_string(Image.open(io.BytesIO(img_bytes)))
+            text += ocr_text + "\n"
+    pdf_doc.close()
+    return text
+Here we use fitz.open with stream=pdf_bytes to open the PDF from memory​
+GEEKSFORGEEKS.ORG
+. We iterate through pages: page.get_text() returns the textual content if the PDF has embedded text. If get_text() is empty (indicating the page might be an image scan), we render the page to an image (get_pixmap()) and run OCR on that image. We accumulate text from all pages. Next, text extraction from Word documents. If it's a .docx, we can use docx library, but to cover both .doc and .docx, we'll use Apache Tika. Tika can extract text from a variety of formats by simply pointing it to the file:
+from tika import parser  # Apache Tika parser
+
+def extract_document_text(file_bytes: bytes, filename: str) -> str:
+    """Extract text from a Word document (doc or docx) using Apache Tika."""
+    # Tika expects a file path, so we write bytes to a temp file
+    import tempfile, os
+    text = ""
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(filename)[1]) as tmp:
+            tmp.write(file_bytes)
+            tmp_path = tmp.name
+        parsed = parser.from_file(tmp_path)
+        text = parsed.get("content", "").strip()
+    except Exception as e:
+        print(f"Tika failed to parse document {filename}: {e}")
+    finally:
+        if 'tmp_path' in locals():
+            os.unlink(tmp_path)  # clean up temp file
+    return text
+This function writes the bytes to a temporary file (with the appropriate extension) and uses parser.from_file to get content​
+MEDIUM.COM
+. We then read parsed["content"] for the extracted text. (In a production setup, running Tika server separately is needed; the tika Python package will spawn a Java process on first use. Alternatively, for .docx one could use docx2txt or python-docx to avoid the external dependency.) Finally, a dispatcher function to pick the correct extraction method for each attachment:
+def extract_attachment_text(attachment: dict) -> str:
+    """Determine attachment type and extract text accordingly."""
+    content_type = attachment["content_type"].lower()
+    filename = attachment.get("filename") or ""
+    data = attachment["data"]
+    
+    text = ""
+    if content_type == "application/pdf" or filename.lower().endswith(".pdf"):
+        text = extract_pdf_text(data)
+    elif ("msword" in content_type) or ("officedocument.wordprocessingml.document" in content_type) \
+         or filename.lower().endswith((".doc", ".docx")):
+        text = extract_document_text(data, filename)
+    elif content_type.startswith("image/") or filename.lower().endswith((".png", ".jpg", ".jpeg", ".tiff")):
+        text = ocr_image_data(data)
+    else:
+        # Fallback: try Tika for any other type
+        try:
+            text = parser.from_buffer(data).get("content", "").strip()
+        except Exception as e:
+            print(f"No extractor for type {content_type}: {e}")
+            text = ""
+    return text
+We check MIME type and file extension to route to the appropriate function. PDFs go to extract_pdf_text, Word docs (identified by MIME msword or the Office OpenXML MIME or file extension) go to extract_document_text. Images go to OCR. We also include a generic fallback: parser.from_buffer (if available in tika) to handle other file types; if that fails, we log that no extractor is available. This makes our system extensible to other formats. Prioritizing Email Body Over Attachments: In many cases, the email body contains a summary or key request, and the attachment might be supplementary (like a form or detailed statement). We will use the extracted attachment text to augment the email body for the AI, but we will structure the prompt such that the model knows the email body is the primary source of truth. For example, we might prepend "Email Body:" and "Attachment Text:" in the prompt, or only use the attachment text if the body is insufficient. In practice, one could set a rule: if the body text is longer than a certain threshold or contains certain keywords (indicating a clear request), rely mostly on it and only briefly reference the attachment. If the body is very short (e.g. "Please see attached request form"), then rely heavily on attachment text. For now, we will plan to combine them in the prompt but indicate which is which, letting GPT-4 focus on the body first. Let's use our extraction functions on the parsed email attachments:
+email_content = email_data["body_text"]
+combined_text = email_content
+for att in email_data["attachments"]:
+    att_text = extract_attachment_text(att)
+    if att_text:
+        combined_text += "\n\n[Attachment: {}]\n{}".format(att.get("filename", "file"), att_text)
+Here, combined_text now contains the email body, followed by the text of each attachment labeled with its filename. We separate sections with newlines and a marker. This combined text will be given to GPT-4 for analysis.
+3. GPT-4 for Classification and Information Extraction
+
+With the email content ready, we leverage OpenAI GPT-4 to interpret the request. The model will classify the type of request and extract structured attributes. We must design effective prompts (prompt engineering) for the model to output what we need in a reliable format. Prompt Design: We will use a structured prompt asking the model to produce a JSON output with specific fields. For example, the model should identify:
+request_type (e.g., "Account Access Issue", "Transaction Dispute", "Loan Inquiry", etc. – depending on expected categories in the financial domain),
+request_subtype (more fine-grained, e.g., "Password Reset" as a subtype of an access issue, or "Unauthorized Charge" as subtype of dispute),
+attributes – a dictionary of extracted key-value pairs. These might include account_number, customer_name, amount, date, urgency (possibly inferred from words like "ASAP" or high importance flags), and any other relevant info,
+multi_intent – a flag or list if multiple requests are detected in one email.
+We will use few-shot examples in the prompt to help GPT-4 understand the format, and use prompt chaining if needed: for instance, first ask the model if there's more than one request; if yes, we could split the email and handle each separately. In our implementation, we can simplify by asking the model to list multiple intents if present. Example Prompt Template:
+You are an AI assistant helping with email triage for a bank. 
+Analyze the customer email (and attachment text if provided) and extract the following:
+1. The type of request (e.g., "Account Access", "Transaction Issue", "General Inquiry", etc.).
+2. The specific sub-type of request.
+3. Key attributes like account number, transaction ID, amount, dates, customer name, and urgency.
+4. If multiple distinct requests are present, list each separately.
+
+Provide the result as a JSON object with keys:
+"request_type", "request_subtype", "attributes", and "multi_intent" (which can be null or a list of intents if applicable).
+
+Ensure the JSON is properly formatted. If information is missing or uncertain, you can leave the field blank or use null.
+Do not include any explanations, only provide valid JSON.
+
+Email Subject: "<subject line here>"
+Email Body: "<body text here>"
+Attachment Text: "<combined attachment text here>"
+In code, we will fill in the placeholders with the actual email content. Let's implement the function that calls GPT-4 using OpenAI’s Python API. (This assumes you have openai package installed and an API key set as openai.api_key):
+import openai
+
+# Make sure to set your OpenAI API key, e.g., openai.api_key = "YOUR_API_KEY"
+
+classification_system_prompt = (
+    "You are an AI assistant helping with email triage for a financial services company. "
+    "You will be given an email (with possible attachment text). "
+    "Identify the customer's request type and sub-type, and extract relevant details. "
+    "If multiple requests are present, identify each one. "
+    "Focus on the email body content primarily, using attachments for additional context if needed. "
+    "Output the analysis in JSON format with keys: request_type, request_subtype, attributes, multi_intent."
+)
+# Few-shot examples could be added here if needed for the model to learn format.
+
+def classify_email_with_gpt(email_subject: str, email_body: str, attachment_text: str = "") -> dict:
+    """Use GPT-4 to classify the email and extract structured info."""
+    # Construct user prompt
+    user_prompt = f"""Email Subject: "{email_subject}"\n"""
+    user_prompt += f"""Email Body: """ + (email_body if email_body.strip() else "<empty>") + "\n"
+    if attachment_text.strip():
+        user_prompt += f"""Attachment Text: {attachment_text[:1000]}...\n"""  # include up to 1000 chars of attachment to avoid huge prompt
+    user_prompt += "\nProvide JSON output with request_type, request_subtype, attributes, multi_intent."
+    
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": classification_system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.2  # low temperature for deterministic output
+        )
+    except Exception as e:
+        print("OpenAI API call failed:", e)
+        return {}
+    # Parse the JSON from the assistant's reply
+    reply = response['choices'][0]['message']['content']
+    # The model is instructed to output JSON, but we should safely parse it
+    import json
+    result = {}
+    try:
+        result = json.loads(reply)
+    except json.JSONDecodeError:
+        # If model returned something that's not strictly JSON, try to fix or re-ask
+        # For simplicity, let's attempt to extract JSON substring:
+        import re
+        match = re.search(r'\{.*\}', reply, flags=re.S)
+        if match:
+            try:
+                result = json.loads(match.group(0))
+            except Exception as e:
+                print("Failed to parse JSON from model output.")
+        else:
+            print("No JSON output from model.")
+    return result
+In this code, we define a classification_system_prompt that stays constant (system role). The user prompt includes the subject, body, and (optionally) attachment text. We truncate the attachment text to a reasonable length to keep the prompt within token limits (GPT-4 can handle long prompts, but hackathon environments might have token constraints; adjust as needed or use a summarization step if attachments are huge). We set a low temperature for more deterministic output, since classification should be consistent. We then call openai.ChatCompletion.create with model "gpt-4". We parse the response content expecting JSON. We include error handling: if JSON parsing fails (e.g., the model included some explanation outside the JSON), we attempt a regex to find a JSON block. In a robust system, you might use OpenAI's function calling or ask the model to retry if format is wrong, but for now we handle basic errors. Multi-Intent Handling: The prompt explicitly asks the model to list multiple requests if present. The returned JSON might look like:
+{
+  "request_type": ["Account Access", "Transaction Issue"],
+  "request_subtype": ["Password Reset", "Fraudulent Charge Dispute"],
+  "attributes": {
+    "account_number": "1234567890",
+    "transaction_amount": "$2500",
+    "transaction_date": "2025-03-01",
+    "urgency": "high"
+  },
+  "multi_intent": true
+}
+In this example, the model found two intents (hence request_type and subtype are lists, and multi_intent: true). We would need to handle both in routing (perhaps creating two tickets or a combined workflow). If there's only one intent, it might return:
+{
+  "request_type": "Account Access",
+  "request_subtype": "Password Reset",
+  "attributes": {
+    "account_number": "1234567890",
+    "user_id": "johndoe",
+    "urgency": "normal"
+  },
+  "multi_intent": false
+}
+or multi_intent: null. Our code treats multi_intent as possibly a boolean or list; we can normalize it to a boolean or list as needed. Prompt Chaining: If we wanted more control, we could break this into multiple GPT calls:
+First call to ask: "Is there more than one request in this email? If yes, list them."
+If more than one, then call classification for each part separately (maybe splitting the email content by sentences or sections).
+If ambiguous, we might call another prompt to clarify missing info or categorize as "Unknown".
+However, due to time constraints in a hackathon, we choose a single prompt that covers multi-intent. GPT-4 is quite capable of identifying multiple requests in one go. We also instruct it to focus on the body content first (which addresses the requirement of prioritizing body over attachment). Let's test our classification function with a hypothetical example (this is a dry run, as we cannot actually call the API here without a valid key and internet access):
+test_subject = "Urgent: Unable to Access Account and Incorrect Balance on Statement"
+test_body = """Hello Team,
+
+I'm having two issues:
+1. I cannot log into my online banking (it says password incorrect).
+2. My credit card statement shows an incorrect balance, possibly an error.
+
+Account: 1234567890
+Please treat this as urgent as I need access ASAP.
+
+Thanks,
+John Doe"""
+test_attachment_text = ""  # assume no attachment for this example
+
+result = classify_email_with_gpt(test_subject, test_body, test_attachment_text)
+print(result)
+We expect a JSON output indicating something like:
+{
+  "request_type": ["Account Access", "Account Issue"],
+  "request_subtype": ["Login Problem", "Balance Discrepancy"],
+  "attributes": {
+    "account_number": "1234567890",
+    "urgency": "high"
+  },
+  "multi_intent": true
+}
+This shows two categories: one about account access (login problem) and another about an account issue (balance discrepancy), plus the extracted account number and inferred urgency. (Note: The exact output depends on GPT-4's training and our prompt phrasing, but the above is illustrative.)
+4. Routing the Request to Appropriate Teams
+
+After classification, we need to route the request to the correct team or department. This is largely a business rule mapping. For example, in a financial services context:
+IAM Team (Identity and Access Management): handles login issues, password resets, access requests.
+Operations Team: handles transaction disputes, account balance issues, fund transfers.
+Customer Service: general inquiries, requests for information.
+Fraud/Compliance: reports of fraud, suspicious activity.
+We can design a simple rules engine or mapping. We also include a confidence or priority score. Since GPT-4 is doing classification, we might assess confidence by certain keywords or by whether the model was uncertain (e.g., if the output is empty or if it gave multiple possible types). In a more advanced setup, we could have GPT provide a confidence or use a secondary classification model to get probabilities. For now, let's define a mapping and a simple confidence heuristic:
+If the model identified a request type clearly, confidence is high. If it returned multiple intents or an "Unknown" type, confidence is lower.
+We will assign confidence = 1.0 for solid classifications, and maybe 0.7 for less certain (this could be refined based on testing).
+Routing logic example (rule-based):
+def route_request(classification: dict) -> dict:
+    """Determine which team to route the request to, and assign a confidence score."""
+    if not classification:
+        return {"team": "Unclassified", "confidence": 0.0}
+    # We might have multi-intent; handle first intent or combine for demo
+    req_type = classification.get("request_type")
+    subtype = classification.get("request_subtype")
+    if isinstance(req_type, list):
+        # Multiple intents: for simplicity, route to a generic queue or handle separately
+        return {"team": "Multiple Requests", "confidence": 0.8}
+    req_type = str(req_type).lower() if req_type else ""
+    subtype = str(subtype).lower() if subtype else ""
+    
+    team = "Unclassified"
+    # Simple mapping logic
+    if "access" in req_type or "login" in subtype or "password" in subtype:
+        team = "Identity & Access Management Team"
+    elif "transaction" in req_type or "balance" in subtype or "dispute" in subtype:
+        team = "Operations Team"
+    elif "loan" in req_type or "account opening" in subtype:
+        team = "Onboarding/Loans Team"
+    elif "fraud" in req_type or "unauthorized" in subtype:
+        team = "Fraud Investigation Team"
+    elif "inquiry" in req_type or "general" in req_type:
+        team = "Customer Service Team"
+    else:
+        # default fallback
+        team = "Customer Service Team"
+    # Confidence scoring (very basic example)
+    confidence = 1.0
+    if team == "Unclassified":
+        confidence = 0.5
+    if classification.get("multi_intent") or classification.get("multi_intent") is True:
+        confidence = 0.8  # slightly lower if multiple issues since each might need separate handling
+    return {"team": team, "confidence": confidence}
+This function maps known request types/subtypes to team names. We normalize to lowercase for matching. For example, if request_type contains "access" or subtype contains "password", we route to IAM. If it's about transactions or disputes, go to Ops. If it's fraud-related, to Fraud team. If none match, default to Customer Service (or "Unclassified" as needed). We then create a confidence value. Here it's mostly defaulting to 1.0 (100%) if we found a match. If nothing matched (team remained "Unclassified"), we lower confidence. We also slightly lower confidence for multi-intent, because maybe each part needs individual attention. In a real system, confidence could come from the model's output (if using classification models, they'd give probabilities). With GPT-4, one trick is to have the model include a field "confidence": e.g., ask it to rate its confidence 0-1. But such a self-reported score might not be very reliable. Instead, we can infer confidence by how well it filled the fields. For example, if many fields are empty or it gave a very generic type, we might lower confidence. For demonstration, our rule-based approach suffices.
+5. Integration with a Mock Service Platform (Ticket Creation)
+
+Once we know the team, the last step is to simulate creating a ticket or routing to a queue. In production, this could be an API call to a ticketing system (ServiceNow, JIRA, etc.), an email to a team distribution list, or placing a message on a queue. Here, we'll just implement a dummy function that prints out the assignment, imitating a ticket creation:
+def create_ticket(email_data: dict, classification: dict, routing: dict):
+    """Simulate creating a ticket in a service platform with the given data."""
+    # Generate a fake ticket ID
+    import uuid
+    ticket_id = str(uuid.uuid4())[:8]  # short random ID
+    print("\n=== Ticket Created ===")
+    print(f"Ticket ID: {ticket_id}")
+    print(f"Subject: {email_data.get('subject')}")
+    print(f"Assigned To: {routing['team']}")
+    print(f"Confidence: {routing['confidence']*100:.1f}%")
+    print("Extracted Info:", classification)
+    print("=====================\n")
+    return ticket_id
+This function prints the ticket details: a random ID, the email subject, which team we assigned, the confidence, and the extracted info (which could be stored in ticket description). It returns a ticket_id for reference. We can now tie it all together for a full run on one email:
+# Simulate processing one email
+email_data = parse_email(raw_email)  # raw_email from earlier or from a source
+body = email_data["body_text"]
+# Combine text for attachments carefully for prompt (body is primary)
+attachment_text_combined = ""
+for att in email_data["attachments"]:
+    text = extract_attachment_text(att)
+    if text:
+        attachment_text_combined += f"[Attachment: {att.get('filename')}] {text}\n"
+# Get classification from GPT
+classification = classify_email_with_gpt(email_data["subject"], body, attachment_text_combined)
+# Determine routing
+routing = route_request(classification)
+# Create a ticket in mock system
+ticket_id = create_ticket(email_data, classification, routing)
+Each layer is modular: parsing, extraction, classification, routing, and ticket creation are separate functions, making it easier to test each piece individually (for instance, you can unit test extract_pdf_text with known PDFs, or route_request with various inputs, etc.).
+6. Error Handling, Feedback Loop, and Deduplication
+
+No system is complete without robust error handling and a plan for continuous improvement. Let's discuss how our implementation addresses these: Error Handling: We wrapped critical steps in try/except blocks:
+Parsing attachments and opening files (PyMuPDF or PIL) might throw exceptions; we catch and log them, defaulting to empty text if extraction fails. For example, extract_pdf_text catches errors opening the PDF​
+GEEKSFORGEEKS.ORG
+, and continues with an empty string or partial results.
+The OpenAI API call is wrapped in try/except; if it fails (due to network or API issues), we log and return an empty dict. In a production setup, you might retry the API call, or fall back to a simpler rules-based classification as backup.
+We handle JSON decoding errors for the model output gracefully by attempting to find a JSON snippet in the response. We could also implement a retry: if the model's answer isn't JSON, we could send another prompt like "Please reply only in JSON." For brevity, we did a simple parse attempt.
+Feedback Capture: To improve the model over time, we need to capture when it makes mistakes. One approach is to log all inputs and outputs, and provide an interface for agents to correct the classification or extracted data. For instance, if a support agent sees the ticket and the classification was wrong, they should be able to update it. We can record that feedback (e.g., in a database or log file). Over time, these could be used to fine-tune a model or update our prompt or rules. In code, a simple placeholder for feedback could be:
+# Pseudo-code: capturing feedback (in reality, this might be an API or manual input)
+def capture_feedback(ticket_id: str, correct_classification: dict):
+    """Store feedback for a given ticket (simulating that an agent provided the correct classification)."""
+    # For demo, just print feedback captured
+    print(f"Feedback for Ticket {ticket_id}: Correct classification = {correct_classification}")
+    # Here you would save to a database or file for later analysis.
+We would call capture_feedback if, for example, we detect some discrepancy or after an agent review. In a hackathon, we might not implement the full loop, but including the hooks shows foresight. Deduplication and Thread Handling: Emails that are part of a conversation thread or forwarded multiple times can cause duplicate processing. Our system should detect if an email is essentially not a new request but part of an existing one. There are a few strategies:
+Utilize email headers: The Message-ID, In-Reply-To, and References headers can link emails in a thread. For example, if an incoming email has an In-Reply-To that matches a Message-ID we've seen before (and possibly already processed), we might treat it as part of an existing case. We could then avoid creating a new ticket and instead update the existing ticket with new information or mark it as a duplicate.
+Check the subject for "Re:" or "Fwd:" prefixes. If an email subject starts with "Re:" or "Fwd:", and we have a ticket with the same base subject, it’s likely part of that chain. We could then decide not to create a new ticket. Instead, perhaps append the new email content to the existing ticket as an update or comment.
+Content hash: We can take a hash of the email body text (and maybe attachment text) and keep a cache of recent hashes. If we see the same content again (which can happen if someone forwards an email chain that contains the original email text), we recognize it as duplicate. For example, we can store the hash of the first email in a thread. When a forwarded copy comes in, it often contains the exact text of the first email, so the hash would match and we skip or link it.
+For simplicity, we illustrate a basic deduplication using the Message-ID and subject approach:
+processed_threads = {}  # store mapping of thread identifier to ticket ID
+
+def get_thread_id(email: EmailMessage) -> str:
+    """Derive a thread identifier from email headers."""
+    refs = email.get('In-Reply-To') or email.get('References')
+    subject = email.get('Subject', '')
+    if refs:
+        return refs
+    # else if it's a forward (no In-Reply-To but 'Fwd:' in subject)
+    if subject.startswith("Fwd:") or subject.startswith("FW:"):
+        # remove Fwd/FW prefix and trim
+        return subject.replace("Fwd:", "").replace("FW:", "").strip()
+    return None
+
+# In the main processing:
+email_msg = BytesParser(policy=policy.default).parsebytes(raw_email)
+thread_id = get_thread_id(email_msg)
+if thread_id and thread_id in processed_threads:
+    existing_ticket = processed_threads[thread_id]
+    print(f"Duplicate/Thread email detected. Linking to existing Ticket {existing_ticket}")
+else:
+    # process email as new
+    email_data = parse_email(raw_email)
+    ...
+    ticket_id = create_ticket(email_data, classification, routing)
+    if thread_id:
+        processed_threads[thread_id] = ticket_id
+This way, if an email is a reply or forward referencing a prior email’s ID, we catch it and avoid opening a new ticket. Instead, we could update the existing one. In our mock, we just print a message. In a real system, you might add a comment to the existing ticket with the new email content. Note: Email threading can get complex due to variations in clients. The above logic is a heuristic. Some forwarded emails include the original email as an attachment of type message/rfc822. Our parsing code would treat that as an attachment (with content type message/rfc822), which we could detect and even parse that attachment to see it's an email. For brevity, we haven't implemented parsing nested email attachments, but that could be done recursively with the same parse_email function if needed.
+Conclusion and Next Steps
+
+We have put together a modular pipeline for an AI-driven email triage system:
+We parse raw emails using Python’s standard libraries (handling MIME structure)​
+DOCS.PYTHON.ORG
+.
+We extract text from attachments using appropriate tools: PyMuPDF/pdfminer for PDFs​
+GEEKSFORGEEKS.ORG
+, pytesseract for OCR on images​
+GEEKSFORGEEKS.ORG
+, and Apache Tika for documents​
+MEDIUM.COM
+.
+We leverage OpenAI's GPT-4 to classify the email’s intent(s) and pull out key details, using carefully crafted prompts and JSON output for easy consumption.
+A set of rules then determines where to route the request, and we simulate ticket creation in a service platform.
+We also addressed advanced considerations like multi-intent handling (using GPT’s capacity to handle complex inputs), error handling at each step, capturing feedback for learning, and detecting duplicate email threads to prevent redundant tickets.
+This framework can be extended and refined:
+Model Refinement: Based on feedback data, we could fine-tune a smaller model or update our prompt to improve accuracy (especially for edge cases).
+Additional Data Sources: We could integrate a knowledge base for the model (for example, providing it with a company policy document via context if needed to answer complex queries), though care must be taken with token limits.
+Response Generation: While not asked here, the system could even draft an email response or acknowledgment to the customer using GPT-4, after creating the ticket.
+Deployment: Wrap this logic in a Flask API or a Cloud Function that triggers on new emails, making it a live service.
+By following this guide, you can implement a robust AI email triage system that saves support teams time and ensures customer requests are quickly directed to the right experts. The modular code and clear interfaces also make it easy to test and maintain each part of the pipeline.
