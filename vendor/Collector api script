@@ -1,33 +1,48 @@
 import requests
 from requests.auth import HTTPBasicAuth
 
-# Dummy credentials and endpoint
-base_url = "https://api.grafana-example.com/fleet"
+# Replace these with your actual details
+base_url = "https://fleet-management-prod-001.grafana.net/collector.v1.CollectorService"
 username = "myuser"
 password = "mypassword"
 collector_id = "abc123"
 
+# GetConfig: Retrieve a collector's configuration
 def get_config():
     url = f"{base_url}/GetConfig"
     payload = {"collector_id": collector_id}
-    response = requests.get(url, json=payload, auth=HTTPBasicAuth(username, password))
-    print("GetConfig:", response.status_code)
-    print(response.json())
+    response = requests.post(url, json=payload, auth=HTTPBasicAuth(username, password))
+    print("GetConfig Status Code:", response.status_code)
+    try:
+        print(response.json())
+    except Exception:
+        print("Raw response:", response.text)
 
+# GetCollector: Retrieve information about a specific collector
 def get_collector():
     url = f"{base_url}/GetCollector"
     payload = {"id": collector_id}
-    response = requests.get(url, json=payload, auth=HTTPBasicAuth(username, password))
-    print("GetCollector:", response.status_code)
-    print(response.json())
+    response = requests.post(url, json=payload, auth=HTTPBasicAuth(username, password))
+    print("GetCollector Status Code:", response.status_code)
+    try:
+        print(response.json())
+    except Exception:
+        print("Raw response:", response.text)
 
+# ListCollectors: Retrieve information about all collectors
 def list_collectors():
     url = f"{base_url}/ListCollectors"
-    response = requests.get(url, json={}, auth=HTTPBasicAuth(username, password))
-    print("ListCollectors:", response.status_code)
-    print(response.json())
+    payload = {}  # No payload needed
+    response = requests.post(url, json=payload, auth=HTTPBasicAuth(username, password))
+    print("ListCollectors Status Code:", response.status_code)
+    try:
+        print(response.json())
+    except Exception:
+        print("Raw response:", response.text)
 
-# Run
+# Run all three
 get_config()
 get_collector()
 list_collectors()
+
+
