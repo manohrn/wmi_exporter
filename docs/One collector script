@@ -1,0 +1,68 @@
+import requests
+import json
+from requests.auth import HTTPBasicAuth
+
+# === CONFIGURATION ===
+base_url = "https://<your-stack>.grafana.net/collector.v1.CollectorService"  # <-- Replace with your actual base URL
+username = "<your-grafana-stack-id>"  # <-- Replace with your Grafana Cloud stack ID
+password = "<your-api-token>"         # <-- Replace with your API token
+
+headers = {
+    "Content-Type": "application/json"
+}
+
+# === LOAD PAYLOAD FROM update-collector.json ===
+with open("update-collector.json", "r") as f:
+    payload = json.load(f)
+
+collector = payload["collector"]
+collector_id = collector["id"]
+expected_remote_attrs = collector.get("remote_attributes", {})
+
+# === STEP 1: SEND UPDATE REQUEST ===
+update_url = f"{base_url}/UpdateCollector"
+update_response = requests.post(
+    update_url,
+    headers=headers,
+    json=payload,
+    auth=HTTPBasicAuth(username, password)
+)
+
+# === STEP 2: VERIFY UPDATE ===
+result = {
+    "collector_id": collector_id,
+    "update_status": "failed",
+    "expected_attributes": expected_remote_attrs,
+    "actual_attributes": {},
+    "verified": False
+}
+
+if update_response.status_code == 200:
+    result["update_status"] = "updated"
+
+    # Fetch updated collector details
+    get_url = f"{base_url}/GetCollector"
+    get_response = requests.post(
+        get_url,
+        headers=headers,
+        json={"id": collector_id},
+        auth=HTTPBasicAuth(username, password)
+    )
+
+    if get_response.status_code == 200:
+        actual_attrs = get_response.json().get("collector", {}).get("remote_attributes", {})
+        result["actual_attributes"] = actual_attrs
+        result["verified"] = all(actual_attrs.get(k) == v for k, v in expected_remote_attrs.items())
+    else:
+        result["update_status"] = f"verify_failed ({get_response.status_code})"
+else:
+    result["update_status"] = f"update_failed ({update_response.status_code})"
+
+# === OUTPUT RESULT TO FILE ===
+with open("single_collector_update_result.json", "w") as out:
+    json.dump(result, out, indent=2)
+
+# === PRINT SUMMARY ===
+print(f"\nUpdate status: {result['update_status']}")
+print(f"Verification match: {result['verified']}")
+print("Result saved to: single_collector_update_result.json")
