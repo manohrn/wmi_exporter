@@ -1,0 +1,18 @@
+[
+  {
+    "id": "collector-id-1",
+    "remote_attributes": {
+      "env": "prod",
+      "region": "us-west",
+      "team": "platform"
+    }
+  },
+  {
+    "id": "collector-id-2",
+    "remote_attributes": {
+      "env": "dev",
+      "region": "us-east",
+      "team": "infra"
+    }
+  }
+]
