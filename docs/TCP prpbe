@@ -1,0 +1,17 @@
+prometheus.exporter.blackbox "integrations_blackbox" {
+  config = {
+    "modules": {
+      "tcp_connect" : {
+        "prober": "tcp",
+        "timeout": "60s",
+        "tcp": {
+          "preferred_ip_protocol": "ip4"
+        },
+        "probe_timeout_offset": "1s"
+      }
+    }
+  }
+  target "tcp" {
+    targets = discovery.file.tcp.targets
+  }
+}
