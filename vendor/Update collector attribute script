@@ -1,0 +1,87 @@
+import requests
+import json
+import csv
+from requests.auth import HTTPBasicAuth
+from pathlib import Path
+
+# === CONFIGURATION ===
+base_url = "https://<your-stack>.grafana.net/collector.v1.CollectorService"  # <-- Replace with your base URL
+username = "<your-grafana-stack-id>"     # <-- Replace with your Grafana Stack ID
+password = "<your-api-token>"            # <-- Replace with your API token
+
+headers = {
+    "Content-Type": "application/json"
+}
+
+# === LOAD INPUT FROM JSON FILE ===
+input_path = Path("collectors_to_update.json")  # Make sure this file exists in the same folder
+with open(input_path, "r") as f:
+    collectors_to_update = json.load(f)
+
+# === FUNCTION DEFINITIONS ===
+
+def update_remote_attributes(collector_id, remote_attrs):
+    url = f"{base_url}/UpdateCollector"
+    payload = {
+        "collector": {
+            "id": collector_id,
+            "remote_attributes": remote_attrs
+        }
+    }
+    response = requests.post(url, headers=headers, json=payload, auth=HTTPBasicAuth(username, password))
+    return response
+
+def get_collector_config(collector_id):
+    url = f"{base_url}/GetCollector"
+    payload = {"id": collector_id}
+    response = requests.post(url, headers=headers, json=payload, auth=HTTPBasicAuth(username, password))
+    return response
+
+# === MAIN LOGIC ===
+
+results = []
+
+for entry in collectors_to_update:
+    collector_id = entry["id"]
+    remote_attrs = entry["remote_attributes"]
+
+    update_response = update_remote_attributes(collector_id, remote_attrs)
+
+    status = "failed"
+    match = False
+    verification = {}
+
+    if update_response.status_code == 200:
+        status = "updated"
+        config_response = get_collector_config(collector_id)
+        if config_response.status_code == 200:
+            current_attrs = config_response.json()["collector"].get("remote_attributes", {})
+            match = all(current_attrs.get(k) == v for k, v in remote_attrs.items())
+            verification = current_attrs
+
+    results.append({
+        "collector_id": collector_id,
+        "update_status": status,
+        "verified": match,
+        "expected": remote_attrs,
+        "actual": verification
+    })
+
+# === WRITE OUTPUT FILES ===
+
+# JSON
+with open("remote_update_report.json", "w") as jf:
+    json.dump(results, jf, indent=2)
+
+# CSV
+with open("remote_update_report.csv", "w", newline='') as cf:
+    writer = csv.DictWriter(cf, fieldnames=["collector_id", "update_status", "verified"])
+    writer.writeheader()
+    for row in results:
+        writer.writerow({
+            "collector_id": row["collector_id"],
+            "update_status": row["update_status"],
+            "verified": row["verified"]
+        })
+
+print("\n[Done] Reports saved as 'remote_update_report.json' and 'remote_update_report.csv'")
