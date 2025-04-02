@@ -1,0 +1,145 @@
+import requests
+import json
+import csv
+from datetime import datetime
+from requests.auth import HTTPBasicAuth
+
+# Configuration
+base_url = "https://fleet-management-prod-001.grafana.net/collector.v1.CollectorService"
+username = "your-username"
+password = "your-password"
+
+headers = {
+    "Content-Type": "application/json"
+}
+
+# -------- API Functions -------- #
+
+def list_collectors():
+    url = f"{base_url}/ListCollectors"
+    response = requests.post(url, headers=headers, json={}, auth=HTTPBasicAuth(username, password))
+    return response.json().get("collectors", []) if response.status_code == 200 else []
+
+def create_collector(name, os, version, labels):
+    url = f"{base_url}/CreateCollector"
+    payload = {
+        "collector": {
+            "name": name,
+            "os": os,
+            "version": version
+        },
+        "labels": labels,
+        "enabled": True
+    }
+    response = requests.post(url, headers=headers, json=payload, auth=HTTPBasicAuth(username, password))
+    timestamp = datetime.utcnow().isoformat() + "Z"
+    if response.status_code == 200:
+        cid = response.json()["collector"]["id"]
+        print(f"[CREATED] {name} with ID {cid}")
+        return {"name": name, "id": cid, "status": "created", "timestamp": timestamp}
+    elif response.status_code == 409:
+        print(f"[SKIPPED] {name} already exists.")
+        return {"name": name, "id": None, "status": "already exists", "timestamp": timestamp}
+    else:
+        print(f"[ERROR] Failed to create {name}: {response.status_code}")
+        return {"name": name, "id": None, "status": f"error ({response.status_code})", "timestamp": timestamp}
+
+def update_collector(cid, new_labels):
+    url = f"{base_url}/UpdateCollector"
+    payload = {
+        "collector": {
+            "id": cid
+        },
+        "labels": new_labels
+    }
+    response = requests.post(url, headers=headers, json=payload, auth=HTTPBasicAuth(username, password))
+    if response.status_code == 200:
+        print(f"[UPDATED] Collector ID {cid}")
+        return True
+    else:
+        print(f"[FAILED] to update {cid}: {response.status_code}")
+        return False
+
+def delete_collector(cid):
+    url = f"{base_url}/DeleteCollector"
+    response = requests.post(url, headers=headers, json={"id": cid}, auth=HTTPBasicAuth(username, password))
+    if response.status_code == 200:
+        print(f"[DELETED] Collector ID {cid}")
+        return True
+    else:
+        print(f"[FAILED] to delete {cid}: {response.status_code}")
+        return False
+
+# -------- Execution -------- #
+
+created_collectors = []
+
+# Step 1: Create collectors
+for i in range(1, 6):
+    name = f"collector-{i}"
+    os_type = "linux" if i % 2 == 0 else "windows"
+    version = "v0.40.0"
+    labels = {
+        "env": f"env-{i}",
+        "region": f"us-east-{i}",
+        "team": f"team-{chr(64 + i)}"
+    }
+    result = create_collector(name, os_type, version, labels)
+    created_collectors.append(result)
+
+# Step 2: Verify collectors
+all_collectors = list_collectors()
+id_name_map = {
+    c["collector"]["id"]: c["collector"]["name"]
+    for c in all_collectors if "collector" in c and "id" in c["collector"]
+}
+
+# Step 3: Resolve skipped ones
+for entry in created_collectors:
+    if not entry["id"]:
+        match = next((cid for cid, n in id_name_map.items() if n == entry["name"]), None)
+        if match:
+            entry["id"] = match
+            entry["verified"] = True
+        else:
+            entry["verified"] = False
+    else:
+        entry["verified"] = entry["id"] in id_name_map
+
+# Step 4: Update verified collectors
+print("\n--- Updating Labels ---")
+for entry in created_collectors:
+    if entry.get("verified"):
+        updated_labels = {
+            "updated_by": "automation",
+            "updated_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+        }
+        update_collector(entry["id"], updated_labels)
+
+# Step 5: Optional deletion
+delete_flag = input("\nDo you want to delete these collectors? (yes/no): ").strip().lower()
+if delete_flag == "yes":
+    print("\n--- Deleting Collectors ---")
+    for entry in created_collectors:
+        if entry.get("verified"):
+            delete_collector(entry["id"])
+
+# Step 6: Write to JSON
+with open("collector_results.json", "w") as jf:
+    json.dump(created_collectors, jf, indent=2)
+
+# Step 7: Write to CSV
+with open("collector_results.csv", "w", newline='') as cf:
+    fieldnames = ["name", "id", "status", "timestamp", "verified"]
+    writer = csv.DictWriter(cf, fieldnames=fieldnames)
+    writer.writeheader()
+    for row in created_collectors:
+        writer.writerow({
+            "name": row["name"],
+            "id": row.get("id", ""),
+            "status": row["status"],
+            "timestamp": row["timestamp"],
+            "verified": row["verified"]
+        })
+
+print("\n[Done] Results saved to collector_results.json and collector_results.csv")
