@@ -1,5 +1,5 @@
 What is happening?
-Due to a recent Artifactory image purge, some Prometheus exporters are failing to start, resulting in gaps in metrics collection on the Prometheus platform. The required container images are no longer available in the repository, impacting observability for affected components.
+The issue impacting metrics collection on the Prometheus platform due to a recent Artifactory image purge has been resolved. Missing container images have been restored, and all affected exporters have been successfully redeployed.
 
 What do I need to do?
-No action is required from your end at this time. The Prometheus platform team is actively working to restore the missing images and redeploy the affected exporters. We will provide an update once metrics collection is fully restored.
+No further action is required. Metrics collection has resumed as expected, and all monitoring gaps have been addressed.
