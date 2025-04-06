@@ -1,0 +1,31 @@
+import pandas as pd
+import re
+
+# Load the Excel file
+input_file = 'your_excel_file.xlsx'  # Replace with your actual file name
+df = pd.read_excel(input_file, sheet_name='Sheet1')
+
+# Step 1: Drop rows where Disabled is 'yes'
+df = df[df['Disabled'].astype(str).str.lower() != 'yes']
+
+# Step 2: Drop the Parameter column
+df = df.drop(columns=[col for col in df.columns if 'Parameter' in col], errors='ignore')
+
+# Step 3: Extract AppID and Basemon from Tags column
+def extract_appid_and_basemon(tag):
+    tag = str(tag)
+    appid_match = re.search(r'\[AppID,\s*([\w.-]+)\]', tag)
+    basemon_match = re.search(r'\[BASEMON,\s*basemon\]', tag, re.IGNORECASE)
+    appid = appid_match.group(1) if appid_match else ''
+    basemon = 'yes' if basemon_match else 'no'
+    return pd.Series([appid, basemon])
+
+df[['AppID', 'Basemon']] = df['Tags'].apply(extract_appid_and_basemon)
+
+# Step 4: Keep only selected columns
+output_df = df[['Monitor Title', 'Monitor Type', 'Group', 'Frequency', 'Host', 'AppID', 'Basemon']]
+
+# Step 5: Save to CSV
+output_file = 'cleaned_output.csv'
+output_df.to_csv(output_file, index=False)
+print(f"Cleaned data saved to {output_file}")
