@@ -1,0 +1,53 @@
+import csv
+from openpyxl import load_workbook
+import re
+
+# Load Excel file
+input_file = 'your_excel_file.xlsx'  # Replace with actual filename
+wb = load_workbook(input_file)
+ws = wb['Sheet1']  # Adjust if your sheet is named differently
+
+# Read headers and map column names to indices
+headers = [cell.value for cell in ws[1]]
+col_map = {name: idx for idx, name in enumerate(headers)}
+
+# Define output columns
+output_headers = ['Monitor Title', 'Monitor Type', 'Group', 'Frequency', 'Host', 'AppID', 'FullAppID', 'Basemon']
+output_rows = [output_headers]
+
+# Go through each row and process
+for row in ws.iter_rows(min_row=2, values_only=True):
+    disabled_value = str(row[col_map.get('Disabled', -1)]).lower()
+    if disabled_value == 'yes':
+        continue
+
+    tags = str(row[col_map.get('Tags', -1)])
+
+    # Extract AppID
+    appid_match = re.search(r'\[AppID,\s*([\w\-.]+(?::[\w\-.]+)?)\]', tags)
+    full_appid = appid_match.group(1) if appid_match else ''
+    appid = full_appid.split(':')[0] if ':' in full_appid else full_appid
+
+    # Extract Basemon presence
+    basemon_match = re.search(r'\[BASEMON,\s*basemon\]', tags, re.IGNORECASE)
+    basemon = 'yes' if basemon_match else 'no'
+
+    # Build row for output
+    output_row = [
+        row[col_map.get('Monitor Title')],
+        row[col_map.get('Monitor Type')],
+        row[col_map.get('Group')],
+        row[col_map.get('Frequency')],
+        row[col_map.get('Host')],
+        appid,
+        full_appid,
+        basemon
+    ]
+    output_rows.append(output_row)
+
+# Write to CSV
+with open('final_output.csv', mode='w', newline='') as f:
+    writer = csv.writer(f)
+    writer.writerows(output_rows)
+
+print("CSV written successfully as 'final_output.csv'")
