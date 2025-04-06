@@ -1,0 +1,157 @@
+import requests
+import json
+import time
+import logging
+import sys
+from datetime import datetime
+from typing import Dict
+
+# === CONFIG ===
+BASE_URL = "https://fleet-management-prod-001.grafana.net/pipeline.v1.PipelineService"
+UPSERT_URL = f"{BASE_URL}/UpsertPipelines"
+GET_URL = f"{BASE_URL}/GetPipeline"
+
+# === AUTH ===
+USERNAME = "<your_api_key_id>"   # Or use None if using Bearer
+PASSWORD = "<your_api_key_secret>"
+BEARER_TOKEN = None              # Optional alternative
+
+# === HEADERS ===
+HEADERS = {
+    "Content-Type": "application/json"
+}
+if BEARER_TOKEN:
+    HEADERS["Authorization"] = f"Bearer {BEARER_TOKEN}"
+
+# === LOGGING ===
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s | %(levelname)s | %(message)s',
+    handlers=[
+        logging.FileHandler("pipeline_upsert.log"),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+
+# === HELPERS ===
+def auth():
+    return None if BEARER_TOKEN else (USERNAME, PASSWORD)
+
+def validate_pipeline(p: Dict) -> bool:
+    required_fields = ["id", "name", "config", "match_attributes"]
+    for field in required_fields:
+        if field not in p:
+            logging.error(f"Missing required field '{field}' in pipeline: {p}")
+            return False
+    if not isinstance(p["match_attributes"], list):
+        logging.error(f"'match_attributes' must be a list in pipeline: {p}")
+        return False
+    return True
+
+# === LOAD PAYLOAD ===
+try:
+    with open("upsert-pipelines.json", "r") as f:
+        data = json.load(f)
+        pipelines = data.get("pipelines", [])
+        if not pipelines:
+            raise ValueError("No pipelines found in input file.")
+except Exception as e:
+    logging.critical(f"Failed to load input file: {e}")
+    sys.exit(1)
+
+# === VALIDATE ===
+valid_pipelines = [p for p in pipelines if validate_pipeline(p)]
+if not valid_pipelines:
+    logging.critical("No valid pipelines to process.")
+    sys.exit(1)
+
+# === STEP 1: UPSERT ===
+try:
+    response = requests.post(
+        UPSERT_URL,
+        headers=HEADERS,
+        auth=auth(),
+        json={"pipelines": valid_pipelines}
+    )
+    logging.info(f"Upsert response code: {response.status_code}")
+    if response.status_code >= 400:
+        logging.error(f"Upsert failed: {response.text}")
+        sys.exit(1)
+except Exception as e:
+    logging.critical(f"Exception during upsert: {e}")
+    sys.exit(1)
+
+time.sleep(10)
+
+# === STEP 2: VERIFY ===
+results = []
+failed_verifications = 0
+
+for pipeline in valid_pipelines:
+    pid = pipeline["id"]
+    expected_attrs = {a["name"]: a["value"] for a in pipeline["match_attributes"]}
+    result = {
+        "pipeline_id": pid,
+        "expected_match_attributes": expected_attrs,
+        "verified": False,
+        "update_status": "failed"
+    }
+
+    try:
+        verify_res = requests.post(
+            GET_URL,
+            headers=HEADERS,
+            auth=auth(),
+            json={"id": pid}
+        )
+        if verify_res.status_code == 200:
+            actual = verify_res.json().get("pipeline", {})
+            actual_attrs = {a["name"]: a["value"] for a in actual.get("match_attributes", [])}
+            verified = all(actual_attrs.get(k) == v for k, v in expected_attrs.items())
+            result.update({
+                "actual_match_attributes": actual_attrs,
+                "verified": verified,
+                "update_status": "updated" if verified else "mismatch"
+            })
+            if not verified:
+                failed_verifications += 1
+                logging.warning(f"[Mismatch] {pid} – Expected: {expected_attrs}, Actual: {actual_attrs}")
+        else:
+            result["error"] = f"Fetch failed ({verify_res.status_code})"
+            failed_verifications += 1
+            logging.error(f"[Fetch failed] Pipeline ID {pid} – Code: {verify_res.status_code}")
+    except Exception as e:
+        result["error"] = str(e)
+        failed_verifications += 1
+        logging.exception(f"[Exception] While verifying pipeline {pid}")
+
+    results.append(result)
+
+# === STEP 3: SAVE RESULT ===
+timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+result_file = f"upsert_pipeline_results_{timestamp}.json"
+with open(result_file, "w") as out:
+    json.dump(results, out, indent=2)
+
+logging.info(f"\nFinal results written to: {result_file}")
+if failed_verifications > 0:
+    logging.warning(f"{failed_verifications} pipeline(s) failed verification.")
+    sys.exit(2)
+else:
+    logging.info("All pipelines verified successfully.")
+    sys.exit(0)
+
+json input 
+{
+  "pipelines": [
+    {
+      "id": "pipeline-prod-001",
+      "name": "prod-team-a-pipeline",
+      "config": "stages:\n  - match:\n      selector: '{job=\"node\"}'\n    stages:\n      - drop:\n          expression: 'true'",
+      "match_attributes": [
+        { "name": "team", "value": "team-a" },
+        { "name": "environment", "value": "prod" }
+      ]
+    }
+  ]
+}
