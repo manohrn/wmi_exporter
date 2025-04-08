@@ -1,0 +1,19 @@
+prometheus.exporter.self "alloy" {}
+
+prometheus.scrape "alloy" {
+  targets    = prometheus.exporter.self.alloy.targets
+  forward_to = [prometheus.remote_write.grafanacloud.receiver]
+  scrape_interval = "{{ scrape_interval }}"
+}
+
+prometheus.remote_write "grafanacloud" {
+  external_labels = {"collector_id" = "{{ collector_id }}"}
+
+  endpoint {
+    url = "{{ url }}"
+    basic_auth {
+      username      = "{{ username }}"
+      password_file = "{{ password_file }}"
+    }
+  }
+}
