@@ -1,0 +1,167 @@
+Ping and Port Monitor Requirements
+
+Results vs. Prometheus Metrics
+
+The table below maps the key results from SiteScope Ping and Port monitors to their equivalent metrics in Grafana’s Alloy agent (Prometheus Blackbox exporter), along with additional notes:
+Result (SiteScope)	Equivalent in Prometheus	Additional Details
+Round Trip Time (Ping latency)	Yes – captured as probe_icmp_duration_seconds (for ICMP ping) and probe_tcp_duration_seconds (for TCP connect)​
+groups.google.com
+.	Represents the time taken for the ping or TCP connection round trip. Blackbox exporter records ICMP latency (with phase rtt) and TCP connection time as part of the probe duration​
+groups.google.com
+. Essentially equivalent to SiteScope’s ping latency measurement.
+Packet Loss % (Ping)	Indirectly available. Probe success rate can be used to derive loss. Blackbox sends a single ping per probe (success = 1 or 0)​
+nsrc.org
+.	Blackbox does not directly calculate packet loss per probe (unlike SiteScope which sends multiple pings per interval). Instead, loss percentage can be derived over time by analyzing probe_success (e.g. if 80% of scrapes succeed, loss ≈20% over that period)​
+nsrc.org
+. See PromQL examples below for calculating packet loss.
+Port Availability (TCP port open)	Yes – captured via probe_success (1 = port reachable, 0 = failure) and connection time metrics. A successful TCP probe implies the port is open.	A SiteScope Port monitor’s “up/down” status maps to probe_success in Prometheus​
+digitalis.io
+​
+digitalis.io
+. If an expected response or banner is configured, probe_failed_due_to_regex indicates content mismatch (failure)​
+digitalis.io
+. The connection timing is captured in probe_tcp_duration_seconds (with phase breakdown) for successful connections.
+Response Time (Port)	Yes – the TCP connection time contributes to probe_duration_seconds and is exposed via phase-specific metrics (e.g. probe_tcp_duration_seconds{phase="connect"}) if available.	SiteScope Port monitor’s connection time is analogous to the Blackbox exporter’s TCP connect duration. Blackbox provides detailed timing: DNS resolution (probe_dns_lookup_time_seconds), TCP handshake time (part of probe_tcp_duration_seconds or probe_connection_duration_seconds), and TLS handshake (if applicable, probe_tls_handshake_duration_seconds). These sum up to the total probe_duration_seconds for the port probe​
+digitalis.io
+.
+Expected Content (Port banner)	Yes – supported via configurable regex expect. If the response doesn’t match, probe_success=0 and probe_failed_due_to_regex=1​
+digitalis.io
+.	SiteScope can verify a string/banner on the port. In Blackbox, the tcp.query_response.expect config allows similar content matching​
+github.com
+​
+github.com
+. On mismatch, the probe is marked failed (success=0) with the regex failure metric set​
+github.com
+​
+serverfault.com
+.
+Note: ICMP probes and TCP probes in Blackbox share common metrics like probe_success and total probe_duration_seconds. The probe_icmp_duration_seconds and probe_tcp_duration_seconds metrics provide granular timing by phase (e.g. DNS resolution, setup, round-trip)​
+groups.google.com
+.
+Configurable Items & Supported Functionality
+
+The following table compares configuration options in SiteScope vs. Grafana Alloy (Blackbox) capabilities, and notes which monitor types (Ping or Port) they apply to:
+Configurable Item	SiteScope Setting	Supported in<br>Ping / Port	Alloy/Blackbox Equivalent	Notes / Additional Details
+Target Host (FQDN or IP)	Host address field	Ping / Port	Yes. Target is provided as the instance or target in Prometheus scrape config​
+grafana.com
+.	Both Ping and Port checks require a target host. Grafana Agent’s blackbox module uses the target parameter (hostname/IP) similarly to SiteScope’s host field.
+Polling Interval	Configurable monitor frequency	Ping / Port	Yes. Controlled by Prometheus scrape interval for the blackbox target​
+grafana.com
+.	Alloy Agent relies on Prometheus scrapes to define how often probes run (e.g. every 1 min). This replaces SiteScope’s internal schedule.
+Test Origination Point (Location/DC)	Select specific SiteScope server or remote engine	Ping / Port	Yes (partial). Deploy multiple Grafana agents in different locations, or use Synthetic Monitoring probe locations​
+grafana.com
+.	SiteScope can ping from various servers. In Grafana, you achieve this by running Alloy Agents in those locations or using Grafana Cloud Synthetic Monitoring locations. The probe label can distinguish the source location​
+grafana.com
+.
+Alerting Enabled	Toggle on/off for monitor	Ping / Port	Yes. Achieved via Prometheus alert rules.	Blackbox exporter always collects metrics; alerting is configured in Prometheus/Grafana (outside of the agent) rather than an on/off switch in the probe.
+Packet Size (Ping payload)	Configurable bytes per ping	Ping	Yes. Blackbox icmp_probe supports setting payload_size (bytes)​
+github.com
+​
+github.com
+.	By default, blackbox uses a standard payload. Custom sizes (for ICMP) can be set in the blackbox module config (requires agent restart to apply).
+Transmission Rate (Ping frequency within check)	e.g. X pings per check or inter-ping interval	Ping	Not directly. Alloy sends one ICMP echo per scrape by default​
+nsrc.org
+. No built-in multi-ping burst (requires multiple scrapes or external tools).	SiteScope may send multiple pings in one cycle to compute average latency and loss. Blackbox currently does a single ping per probe (no Smokeping-style multi-packet in one scrape)​
+nsrc.org
+. Packet loss/jitter must be derived over time from successive scrapes.
+IPv6/IPv4 Selection	Option to force IPv4 or IPv6	Ping / Port	Yes. Blackbox allows preferred_ip_protocol: ip4 or ip6 in module config​
+github.com
+.	If “Any” is selected, SiteScope tries IPv4 then IPv6. Blackbox similarly can fallback (ip_protocol_fallback: true)​
+github.com
+.
+Probing Method (Protocol)	ICMP vs. TCP for reachability	Ping (ICMP) / Port (TCP)	Yes. Blackbox has distinct ICMP and TCP modules (separate probe types)​
+github.com
+.	SiteScope uses ICMP for Ping monitors and TCP (or UDP) for Port monitors. Grafana’s blackbox uses ICMP for ping checks and TCP sockets for port checks. (Note: UDP port monitoring in SiteScope is limited – by default SiteScope’s Port monitor sends TCP unless a special workaround is used​
+community.opentext.com
+​
+community.opentext.com
+. Blackbox does not support arbitrary UDP port probes out-of-the-box.)
+Expected Response String (Port)	Configurable expected banner or content on connect	Port only	Yes. Supported via expect regex in Blackbox TCP module​
+github.com
+.	Both systems allow content verification on TCP connections. SiteScope can check if a specific response (e.g. a protocol handshake message) is received. Blackbox’s query_response.expect performs a similar check; if the regex doesn’t match, probe_failed_due_to_regex = 1 and the probe is marked failed​
+github.com
+​
+serverfault.com
+.
+TCP Connection Mode (Half-open vs full)	SYN scan vs full connect	Port only	Partial. Blackbox always performs a full TCP connect by default. (Low-level TCP options not exposed.)	SiteScope may offer a “SYN vs ACK” mode for port checks (half-open SYN scan vs full connect). Grafana’s blackbox does a normal full connection (SYN, SYN-ACK, ACK). It does not support half-open SYN-only probes in its standard configuration.
+TLS Handshake (for SSL ports)	Option to enable TLS and check certificate	Port (if protocol is SSL/TLS)	Yes. Blackbox can initiate TLS (tls: true or starttls in config)​
+github.com
+ and provides cert expiry metric.	Alloy agent’s blackbox module can perform a TLS handshake on the port (if configured), and exposes probe_tls_handshake_duration_seconds (time taken) and certificate info like probe_ssl_earliest_cert_expiry. SiteScope’s Port monitor can also check SSL-enabled ports but details depend on configuration.
+Additional Details & Interpretation of Metrics
+
+Latency (Round Trip Time): Measures the time for a packet to go from source to destination and back. In SiteScope Ping, this is the reported Round Trip Time. In Prometheus, probe_icmp_duration_seconds{phase="rtt"} captures this latency per ping​
+groups.google.com
+. Latency is typically averaged over multiple pings in SiteScope, whereas in Grafana you may compute averages over time since each scrape is a single ping. (The latency metric in thousandeyes/AppDynamics is similarly defined as “the average of the round-trip packet time”​
+docs.appdynamics.com
+​
+docs.appdynamics.com
+.) Packet Loss: The percentage of packets that did not reach the destination. SiteScope computes this per interval (e.g. if 2 out of 5 pings fail, loss = 40%). In Grafana’s context, loss can be inferred by how often probe_success is 0. For example, if over 5 minutes 5 out of 20 scrapes failed, that’s 25% packet loss. Definition: End-to-end packet loss is calculated by subtracting the number of reply packets received from the number sent, then dividing by total sent​
+patents.google.com
+​
+serverfault.com
+ (and converting to %). Blackbox doesn’t report this as a single metric, but it can be derived (see PromQL section). Jitter: The variability in latency (packet delay variation). SiteScope Ping monitor does not explicitly report jitter, but if multiple pings are sent, one could derive it. Grafana’s blackbox doesn’t calculate jitter directly either. However, if you collect many ping latencies (e.g. over many scrapes), jitter can be approximated as the standard deviation or mean deviation of the latency series. For reference, jitter is “the mean deviation of latency – representing how far, on average, all measurements are from the mean latency”​
+docs.appdynamics.com
+​
+docs.appdynamics.com
+. In practice, you could use a PromQL function like stddev_over_time(probe_icmp_duration_seconds{phase="rtt"}[5m]) to gauge jitter over 5 minutes. Available Bandwidth: This refers to the maximum network throughput available between the source and destination. Neither SiteScope Ping nor the Blackbox ICMP/TCP modules measure available bandwidth – they are not bandwidth tests. (This metric is present only in specialized network tests like ThousandEyes agent-to-server bandwidth tests, not in simple ping/port monitoring.) If needed, separate tools or protocols (iperf, etc.) would be required for bandwidth monitoring. Capacity: Similar to available bandwidth, “capacity” would imply the total possible bandwidth of the link. This is not measured by SiteScope Ping or Grafana’s blackbox. It’s mentioned here for completeness but falls outside the scope of ping/port monitors. Essentially, Ping and Port monitors focus on reachability and response time, not throughput capacity. DNS Lookup Time: When the target is specified by hostname, the monitors must resolve it to an IP. Blackbox exporter exposes probe_dns_lookup_time_seconds for the DNS resolution duration​
+digitalis.io
+. SiteScope Ping/Port would also include DNS time in the overall response if using a hostname (though it may not explicitly show it). Grafana allows monitoring this aspect via the metric to see if DNS is a bottleneck. TCP Connection & TLS Handshake: Blackbox provides detailed breakup: probe_connection_duration_seconds indicates the time to establish the TCP connection (3-way handshake), and probe_tls_handshake_duration_seconds covers the SSL/TLS negotiation time (if TLS is used). These help interpret where a delay occurs (e.g. slow TCP connect vs. slow TLS handshake). SiteScope Port monitor typically just gives a total response time; with Grafana you can pinpoint if, say, DNS or TLS is adding latency. Probe Success/Failure: The binary outcome of the probe is probe_success (1 for success, 0 for failure)​
+groups.google.com
+. SiteScope would show a status like “Ping Successful” vs “Ping Failed” or “Port Open” vs “Port Closed” – this maps directly to probe_success. Grafana’s Alloy agent can be used to compute uptime or trigger alerts based on this metric. When probe_success=0, you can consult other metrics (DNS time, etc.) which might be zero or incomplete, and probe_failed_due_to_regex to see if the failure was due to content mismatch (for TCP/HTTP probes)​
+github.com
+​
+serverfault.com
+.
+PromQL Queries for Key Metrics
+
+Below are example PromQL queries to monitor these metrics in Grafana/Prometheus:
+Round Trip Time (Latency): To graph the latest ping latency (ICMP):
+probe_icmp_duration_seconds{phase="rtt", instance="<target_host>"}
+This gives the round-trip time in seconds for the given host. You can use functions for aggregations, e.g., average over 5 minutes:
+avg_over_time(probe_icmp_duration_seconds{phase="rtt", instance="<target_host>"}[5m])
+This would reflect average latency over last 5 minutes. For min/max latency in that period, use min_over_time(...) or max_over_time(...)​
+nsrc.org
+. (Because Blackbox sends one ping per interval, using PromQL over time simulates multiple pings​
+nsrc.org
+.)
+Packet Loss Percentage: Calculate the fraction of failed pings over a window. For example, over 5 minutes:
+100 * (1 - avg_over_time(probe_success{instance="<target_host>", module="icmp"}[5m]))
+This yields the percentage of packets lost in the last 5 minutes (i.e. 100% minus the average success rate)​
+nsrc.org
+. A result of 0% means no loss; 100% means the host was unreachable for the entire period. You can adjust the time window or use sum_over_time and count_over_time on probe_success for more explicit calculations.
+Port Availability: For a given TCP port check (module configured for TCP), probe_success{instance="<target_host>:<port>", module="tcp"} directly indicates if the latest check succeeded (1) or failed (0). To monitor uptime over time, you might use:
+avg_over_time(probe_success{instance="<target_host>:<port>", module="tcp"}[1h]) * 100
+which gives percentage of time the port was up in the last hour. You could also alert if min_over_time(probe_success[5m]) == 0 (meaning at least one failure in last 5m, or continuously 0 for 5m for a hard outage).
+Transmission Rate: N/A – Neither monitor directly measures network throughput. “Transmission rate” in context of ping could refer to how frequently packets are sent. In Prometheus, that is controlled by scrape interval. If needed, you can simulate higher ping frequency by reducing the scrape interval (e.g. 5s) or running multiple probes. But there isn’t a direct Prom metric for “Mbps” or similar from Ping/Port checks. (This metric would be assessed with other specialized tools, not blackbox exporter.)
+DNS Lookup and TLS metrics: If using hostnames or TLS, you can monitor those phases. For example:
+probe_dns_lookup_time_seconds{instance="<target_host>", module="<module_name>"}
+shows the DNS resolution time. Similarly:
+probe_tls_handshake_duration_seconds{instance="<target_host>:443", module="tcp_tls"}
+would show TLS handshake time for a TLS-enabled TCP module. These help identify if slow DNS or TLS negotiation is affecting the overall check. The overall probe duration is probe_duration_seconds, and it should roughly equal the sum of DNS + connect + handshake + payload transfer times.
+Differences and Limitations
+
+When comparing SiteScope vs Grafana Alloy (Prometheus) monitoring, keep in mind:
+Single Ping vs Multiple Pings: SiteScope’s Ping monitor typically sends multiple ICMP echoes in one test cycle to calculate loss% and average RTT. Grafana’s blackbox exporter sends one ping per scrape​
+nsrc.org
+. Thus, Blackbox relies on multiple scrapes over time to assess packet loss and jitter​
+nsrc.org
+. It provides instantaneous latency and success/failure per scrape, which is a different model. In practice, high-frequency scrapes can approximate SiteScope’s behavior (e.g. a 15s scrape interval yields 4 pings/minute, enough to derive loss rates over a few minutes).
+Metric granularity: Prometheus records every data point, allowing calculations of min/max/stddev over any period post-hoc. SiteScope might only display the latest value or an average in its UI. With Grafana, you have the raw time-series to compute trends (e.g. burst packet loss, latency distribution) that SiteScope might not expose as readily.
+Protocol support: Both support ICMP and TCP. UDP: SiteScope’s Port monitor has limited support for UDP (it isn’t straightforward to do pure UDP checks without a special configuration)​
+community.opentext.com
+. The Blackbox exporter’s built-in modules do not have a generic UDP port check (DNS checks use UDP by default, but for arbitrary ports there’s no module). This could be a gap if you need to monitor a UDP service – you’d need custom scripting or a different exporter.
+Content validation: Both systems allow checking expected content on a TCP connection. Blackbox’s approach is flexible with regex and even StartTLS for protocols, but it requires configuration. SiteScope may have simpler UI for a specific string. Blackbox’s probe_failed_due_to_regex provides a clear metric if content check fails​
+github.com
+.
+Calculated metrics: SiteScope directly gives loss% and may calculate averages for you. In Grafana/Prometheus, you derive those via queries. This offers more flexibility (e.g. different rolling windows) but requires setting up the queries or alerts.
+Alloy Agent deployment: SiteScope is a centralized tool (agentless monitoring from a server or a few collectors). Grafana’s Alloy/Agent is typically lightweight and can be deployed in a distributed fashion. This means you can easily run probes from multiple locations (for true external Synthetic monitoring). However, it also means if you want to mimic SiteScope’s exact behavior (like ping from a certain site), you need an agent there.
+Licensing/Cost model: (Not a metric difference, but notable) SiteScope licensing often counts each ping or port monitor, whereas Prometheus/Alloy is open-source (or usage-based if using Grafana Cloud). This might influence how many targets or frequency you monitor at, but technically the capabilities are there.
+In summary, Grafana’s Alloy (with Blackbox exporter) can achieve nearly all the functionality of SiteScope’s Ping and Port monitors – and provides deeper insight via metrics like DNS time and TLS timing – but it requires analysis through Prometheus metrics (PromQL) rather than a built-in UI percentage for packet loss. The models differ slightly: SiteScope gives you immediate aggregated results per test run, while Prometheus gives you raw data points that you aggregate as needed. With careful configuration and queries, the Grafana solution can cover the same ground and offer more flexibility​
+nsrc.org
+​
+nsrc.org
+, but be mindful of the one-ping-per-interval approach and plan your scrape intervals accordingly to capture the level of detail you need (latency distribution, loss, etc). Sources: Prometheus Blackbox Exporter docs and community examples​
+groups.google.com
+​
+groups.google.com
+, Grafana/Alloy documentation, and Micro Focus SiteScope documentation for Ping/Port monitors. The above content reflects the mapping of features and metrics based on SiteScope 11.x capabilities and Prometheus Blackbox Exporter (as embedded in Grafana Alloy Agent).
