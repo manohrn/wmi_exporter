@@ -1,0 +1,13 @@
+kubectl exec -it <grafana-agent-pod> -n <namespace> -- curl -v https://<etcd-endpoint>:<port>/metrics \
+  --cert /path/to/client.crt \
+  --key /path/to/client.key \
+  --cacert /path/to/ca.crt
+
+kubectl logs <grafana-agent-pod> -n <namespace>
+
+openssl x509 -in /path/to/client.crt -noout -dates
+
+curl --cert /path/to/client.crt \
+     --key /path/to/client.key \
+     --cacert /path/to/ca.crt \
+     https://<etcd-endpoint>:<port>/metrics
