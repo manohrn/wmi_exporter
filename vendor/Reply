@@ -1,0 +1,13 @@
+Hi Nik,
+
+Here’s the detailed walkthrough of the OCP custom alert rule process, including how it’s configured, validated, and deployed across environments:
+	1.	Alert Rule Deployment (Non-Prod):
+Alert rules are initially deployed to the non-production Grafana Cloud environment using our automated pipeline. This pipeline performs multiple validation steps:
+	•	Syntax validation
+	•	Difference check between the local rule files and existing rules in Grafana Cloud
+	•	Validation using Mimir tool, which is invoked within the Python-based pipeline
+Only after successful validation are the rules uploaded to the non-prod environment.
+	2.	Promotion to Production:
+Once tested and validated in non-prod, the same pipeline is used to deploy the alert rules to production. This ensures consistency and reliability across environments. The rules are uploaded to the Ruler API under the appropriate namespace.
+	3.	Self-Service Enablement (Optional via MSSP):
+We have the flexibility to integrate MSSP to handle this process as well. MSSP can utilize the Mimir validation tool and APIs to automate rule management. However, MSSP would also need to implement logic to translate user inputs into PromQL alert rules, similar to the way TARA currently works.
