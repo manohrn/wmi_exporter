@@ -1,0 +1,24 @@
+#!/bin/bash
+
+# Define paths
+EXCEL_INPUT="ICMP_Ping.xlsx"
+CSV_OUTPUT="final_output.csv"
+YAML_OUTPUT="icmp_targets.yaml"
+
+echo "==== Step 1: Generating CSV from Excel ($EXCEL_INPUT) ===="
+python3 icmp_input.py
+if [ $? -ne 0 ]; then
+  echo "Error: Failed to generate CSV. Aborting."
+  exit 1
+fi
+echo "CSV successfully created: $CSV_OUTPUT"
+
+echo "==== Step 2: Generating YAML config from CSV ($CSV_OUTPUT) ===="
+python3 alloy_blackbox_yaml_generator.py
+if [ $? -ne 0 ]; then
+  echo "Error: Failed to generate YAML. Aborting."
+  exit 1
+fi
+echo "YAML configuration file generated: $YAML_OUTPUT"
+
+echo "==== All steps completed successfully ===="
