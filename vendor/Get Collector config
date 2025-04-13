@@ -1,0 +1,36 @@
+import requests
+import json
+
+# Configuration
+user_id = "user"
+token = "token"
+collector_id = "adeverteuil-wellsfargo-gma-benchmark"
+url = "https://fleet-management-prod-001.grafana.net/collector.v1.CollectorService/GetConfig"
+output_json = "get-config-response.json"
+output_river = "config-content.river"
+
+# Step 1: Send POST request
+headers = {
+    "Content-Type": "application/json"
+}
+payload = {
+    "id": collector_id
+}
+
+response = requests.post(
+    url,
+    auth=(user_id, token),
+    headers=headers,
+    data=json.dumps(payload)
+)
+
+# Step 2: Save full response to file
+with open(output_json, "w") as f:
+    json.dump(response.json(), f, indent=2)
+
+# Step 3: Extract the "content" field into a .river file
+config_content = response.json().get("content", "")
+with open(output_river, "w") as f:
+    f.write(config_content)
+
+print(f"River config written to {output_river}")
