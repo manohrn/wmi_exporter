@@ -1,0 +1,138 @@
+---
+- name: Update Monitoring Targets on Windows Server
+  hosts: windows
+  gather_facts: false
+  force_handlers: true  # Ensures handlers run even if a task fails
+
+  vars_prompt:
+    - name: monitor_name
+      prompt: "Enter the monitor name (e.g., google_ping)"
+      private: no
+
+    - name: target_group
+      prompt: "Enter the target group (e.g., internet)"
+      private: no
+
+    - name: target_ips
+      prompt: "Enter target IPs (comma-separated, e.g., 8.8.8.8,1.1.1.1)"
+      private: no
+
+    - name: probe_type
+      prompt: "Enter the probe type (icmp or tcp)"
+      private: no
+
+    - name: target_port
+      prompt: "Enter the target port (required for tcp probe type)"
+      private: no
+      when: probe_type == 'tcp'
+
+  vars:
+    icmp_config_path: "C:\\Monitoring\\icmp_targets.yaml"
+    tcp_config_path: "C:\\Monitoring\\tcp_targets.yaml"
+    backup_dir: "C:\\Monitoring\\backups"
+    log_dir: "C:\\Monitoring\\logs"
+    monitoring_service_name: "BlackboxExporter"  # Replace with your actual service name
+
+  tasks:
+    - name: Ensure backup directory exists
+      ansible.windows.win_file:
+        path: "{{ backup_dir }}"
+        state: directory
+
+    - name: Ensure log directory exists
+      ansible.windows.win_file:
+        path: "{{ log_dir }}"
+        state: directory
+
+    - name: Determine config path based on probe type
+      set_fact:
+        config_path: "{{ icmp_config_path if probe_type == 'icmp' else tcp_config_path }}"
+
+    - name: Backup existing config file
+      block:
+        - name: Check if config file exists
+          ansible.windows.win_stat:
+            path: "{{ config_path }}"
+          register: config_stat
+
+        - name: Backup config file if it exists
+          ansible.windows.win_copy:
+            src: "{{ config_path }}"
+            dest: "{{ backup_dir }}\\{{ (config_path | basename) }}.{{ lookup('pipe', 'powershell -Command \"Get-Date -Format yyyyMMddHHmmss\"') }}.bak"
+          when: config_stat.stat.exists
+      rescue:
+        - name: Log backup failure
+          ansible.windows.win_lineinfile:
+            path: "{{ log_dir }}\\playbook.log"
+            line: "Backup failed for {{ config_path }} at {{ ansible_date_time.iso8601 }}"
+            create: yes
+
+    - name: Read existing config file
+      block:
+        - name: Slurp existing config
+          ansible.windows.win_slurp:
+            src: "{{ config_path }}"
+          register: existing_config
+          when: config_stat.stat.exists
+
+        - name: Parse existing YAML
+          set_fact:
+            existing_targets: "{{ existing_config.content | b64decode | from_yaml | default({'targets': []}) }}"
+          when: config_stat.stat.exists
+      rescue:
+        - name: Log read failure
+          ansible.windows.win_lineinfile:
+            path: "{{ log_dir }}\\playbook.log"
+            line: "Failed to read or parse {{ config_path }} at {{ ansible_date_time.iso8601 }}"
+            create: yes
+        - name: Set existing_targets to empty
+          set_fact:
+            existing_targets: {'targets': []}
+
+    - name: Split target_ips into a list
+      set_fact:
+        target_ip_list: "{{ target_ips.split(',') | map('trim') | list }}"
+
+    - name: Construct new targets list
+      set_fact:
+        new_targets: >-
+          {% set targets = [] %}
+          {% for ip in target_ip_list %}
+            {% set target = {'name': monitor_name, 'address': ip, 'group': target_group} %}
+            {% if probe_type == 'tcp' %}
+              {% set _ = target.update({'port': target_port}) %}
+            {% endif %}
+            {% set _ = targets.append(target) %}
+          {% endfor %}
+          {{ targets }}
+
+    - name: Merge new targets with existing ones
+      set_fact:
+        merged_targets: >-
+          {% set existing = existing_targets.targets | default([]) %}
+          {% for new in new_targets %}
+            {% set exists = existing | selectattr('name', 'equalto', new.name) | list %}
+            {% if exists %}
+              {% set _ = existing.remove(exists[0]) %}
+            {% endif %}
+            {% set _ = existing.append(new) %}
+          {% endfor %}
+          {{ existing }}
+
+    - name: Render updated targets.yaml
+      ansible.windows.win_template:
+        src: templates/targets.yaml.j2
+        dest: "{{ config_path }}"
+        force: yes
+        vars:
+          targets: "{{ merged_targets }}"
+      notify: Reload Monitoring Service
+
+  handlers:
+    - name: Reload Monitoring Service
+      ansible.windows.win_service:
+        name: "{{ monitoring_service_name }}"
+        state: restarted
+      register: service_restart
+      failed_when: service_restart.failed
+      ignore_errors: no
