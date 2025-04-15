@@ -1,0 +1,47 @@
+groups:
+- name: blackbox-adaptive-alerts
+  rules:
+
+  - alert: AdaptiveHighLatency
+    expr: avg_over_time(probe_icmp_duration_seconds{phase="rtt", module="icmp"}[5m]) 
+          > 2 * avg_over_time(probe_icmp_duration_seconds{phase="rtt", module="icmp"}[1h])
+    for: 2m
+    labels:
+      severity: warning
+      alert_type: adaptive_latency
+    annotations:
+      summary: "Adaptive High Latency Detected"
+      description: "RTT is significantly higher than the 1-hour baseline for {{ $labels.instance }}."
+
+  - alert: AdaptivePacketLossSpike
+    expr: (1 - avg_over_time(probe_success{module="icmp"}[5m])) 
+          > 2 * (1 - avg_over_time(probe_success{module="icmp"}[1h]))
+    for: 2m
+    labels:
+      severity: warning
+      alert_type: adaptive_packet_loss
+    annotations:
+      summary: "Adaptive Packet Loss Spike Detected"
+      description: "Packet loss in the last 5 minutes is significantly above the 1-hour average for {{ $labels.instance }}."
+
+  - alert: AdaptivePortLatencySpike
+    expr: avg_over_time(probe_duration_seconds{module="tcp"}[5m]) 
+          > 1.5 * avg_over_time(probe_duration_seconds{module="tcp"}[1h])
+    for: 2m
+    labels:
+      severity: warning
+      alert_type: adaptive_tcp_latency
+    annotations:
+      summary: "TCP Port Latency Spike Detected"
+      description: "TCP probe latency has spiked compared to baseline on {{ $labels.instance }}."
+
+  - alert: AdaptiveFailureRateIncrease
+    expr: (1 - avg_over_time(probe_success{module="tcp"}[5m])) 
+          > 1.5 * (1 - avg_over_time(probe_success{module="tcp"}[1h]))
+    for: 3m
+    labels:
+      severity: warning
+      alert_type: adaptive_tcp_failure
+    annotations:
+      summary: "Increased Failure Rate Detected"
+      description: "Failure rate has significantly increased for TCP probes to {{ $labels.instance }}."
