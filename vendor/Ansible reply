@@ -1,0 +1,11 @@
+Detailed Description / Problem Statement:
+As part of our tools consolidation effort, we are migrating Ping and Port monitoring from OpenText SiteScope to a Prometheus-based solution using Grafana Alloy with Blackbox Exporter. Currently, the target configuration files require manual updates, which is error-prone and time-consuming.
+
+Expected Solution:
+An Ansible playbook has been developed to automate the maintenance of these target files. It supports adding, updating, or removing targets dynamically for both ICMP (Ping) and TCP (Port) probes. The playbook uses Jinja2 templating to ensure consistency and includes backup, logging, error handling, and service reload triggers.
+
+Business Impact:
+This automation significantly reduces manual effort and human error, improves deployment consistency, and accelerates the migration from SiteScope to Prometheus. It aligns with our strategic goal of reducing operational overhead and consolidating monitoring tools.
+
+When are you expecting the solution to be implemented / Urgency:
+The playbook is ready for integration and testing. We are targeting implementation in the next sprint to support ongoing SiteScope decommissioning efforts. Early feedback and validation from the Ansible team would be highly appreciated to ensure readiness for production deployment.
