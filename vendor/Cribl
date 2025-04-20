@@ -1,0 +1,81 @@
+Meeting Notes: Cribl Architecture & Observability Integration
+
+Role: Principal Engineer – Observability
+Date: [Insert Date]
+Participants: Cribl Engineer, [Your Name], Observability Team
+
+⸻
+
+1. Architecture & Design
+
+Q1. How does Cribl ensure high availability and scalability in distributed environments?
+A: Cribl uses a decoupled architecture with a centralized Leader Node for control and distributed Worker Nodes for data processing. Worker Groups can scale horizontally, and the system supports HA through redundant nodes and stateless design with external object storage for state preservation.
+
+Q2. How is backpressure handled when data spikes exceed processing capacity?
+A: Cribl supports in-memory queuing and disk-based spooling to prevent data loss during spikes. It also integrates with Kafka and S3 for buffering and retries, allowing load shedding or rate limiting when needed.
+
+Q3. What is the data flow inside Cribl from source to destination?
+A: Events flow through Sources → Pipelines (Routes, Filters, Functions, Lookups) → Destinations. Pipelines apply transformation logic using JavaScript-based expressions, filtering, enrichment, and routing, all done in-flight.
+
+⸻
+
+2. Integration & Extensibility
+
+Q4. How does Cribl integrate with Prometheus, OpenTelemetry, or Splunk?
+A: Cribl can ingest from OpenTelemetry collectors, Prometheus exporters (via HTTP Pull or Push), or syslog, and route the data to Splunk, Elastic, Kafka, or even Prometheus remote write. For Splunk, it acts as a license-saving edge node by preprocessing data.
+
+Q5. Can we enrich logs in-flight with Kubernetes or CMDB metadata?
+A: Yes, Cribl supports dynamic enrichment via lookup tables (CSV, REST API, Redis) or custom JavaScript functions. Kubernetes metadata can be enriched using annotations or tags during ingestion.
+
+Q6. Does Cribl support routing logs to multiple destinations simultaneously?
+A: Absolutely. Cribl supports fan-out routing, where a single log stream can be conditionally routed to multiple destinations (e.g., Splunk for security, S3 for archive, Prometheus for metrics).
+
+⸻
+
+3. Observability Use Cases
+
+Q7. How can we use Cribl to reduce Splunk ingestion cost?
+A: By using pre-ingest filtering, field pruning, sampling, and masking, Cribl can reduce unnecessary log volume by up to 40–60%. Only high-value data is routed to Splunk, while the rest can be stored in cheaper long-term systems like S3.
+
+Q8. Can Cribl identify and suppress noisy or redundant logs?
+A: Yes, using rules and thresholds, Cribl can detect high-frequency patterns (like health checks or debug logs) and suppress or summarize them without losing observability.
+
+Q9. How do enterprises in the financial domain use Cribl?
+A: Common use cases include:
+	•	Secure PII/PCI redaction before ingest
+	•	Controlled routing of sensitive logs to security tools
+	•	Audit trail generation for SOCs
+	•	Observability cost governance
+
+⸻
+
+4. Data Governance & Security
+
+Q10. How does Cribl handle masking or redacting sensitive fields?
+A: Built-in functions allow regex-based masking, field drop, and custom redaction policies. Sensitive fields like PAN, email, or IP can be removed before reaching downstream systems.
+
+Q11. Are changes to Cribl pipelines auditable?
+A: Yes. Cribl has a full audit trail and RBAC, where changes to pipelines, routes, and lookups are tracked and version-controlled. Integrates with SSO and LDAP.
+
+⸻
+
+5. Innovation & Future Roadmap
+
+Q12. Is there any GenAI or ML-based optimization planned in Cribl?
+A: Cribl is exploring AI-assisted pipeline suggestions, anomaly detection modules, and summarization of logs using LLMs. Some beta features may offer pipeline heatmaps or alert generation based on drift detection.
+
+Q13. Can we simulate or replay historical logs for RCA or incident testing?
+A: Yes. Cribl supports Replay from S3, Azure Blob, or any object store, allowing you to re-ingest historical logs to new destinations or pipelines for forensic analysis.
+
+Q14. Can Cribl output its own metrics to Prometheus/Grafana?
+A: Yes. Cribl exports internal metrics on CPU, memory, pipeline latency, events processed, dropped events, etc., which can be scraped into Prometheus or viewed via built-in dashboards.
+
+⸻
+
+6. Operationalization
+
+Q15. What is the CI/CD approach to manage pipelines safely?
+A: Cribl supports GitOps integration, allowing pipelines and configurations to be version-controlled and deployed via CI/CD workflows. Includes dry-run testing, staged deployment, and rollback.
+
+Q16. Can pipelines be modified on the fly without downtime?
+A: Yes. Hot reload capabilities allow pipelines to be updated dynamically. Versioning allows rollback without service impact
