@@ -1,0 +1,120 @@
+Step-by-Step Guide
+
+1. Project Structure
+alloy_windows_exporter_setup/
+├── generate_river_config.py
+├── alloy_windows_exporter_template.river.j2
+├── services.yaml         # Input file with list of Windows services
+├── install_alloy.ps1     # PowerShell script to install and start Alloy
+2. Input File – services.yaml
+windows_services_to_monitor:
+  - wuauserv
+  - WinDefend
+  - EventLog
+3. River Template – alloy_windows_exporter_template.river.j2
+prometheus.exporter.windows "integrations_windows_exporter" {
+  enabled_collectors = ["cpu", "cs", "logical_disk", "net", "os", "service", "system", "time", "diskdrive"]
+
+  {% if windows_services_to_monitor %}
+  collector_args {
+    service = {
+      services = "{{ windows_services_to_monitor | join(',') }}"
+    }
+  }
+  {% endif %}
+}
+
+discovery.relabel "integrations_windows_exporter" {
+  targets = prometheus.exporter.windows.integrations_windows_exporter.targets
+
+  rule {
+    target_label = "job"
+    replacement  = "integrations/windows_exporter"
+  }
+
+  rule {
+    target_label = "instance"
+    replacement  = constants.hostname
+  }
+}
+
+prometheus.scrape "integrations_windows_exporter" {
+  targets    = discovery.relabel.integrations_windows_exporter.output
+  forward_to = [prometheus.relabel.integrations_windows_exporter.receiver]
+  job_name   = "integrations/windows_exporter"
+}
+
+prometheus.relabel "integrations_windows_exporter" {
+  forward_to = [prometheus.remote_write.metrics_service.receiver]
+
+  rule {
+    source_labels = ["volume"]
+    regex         = "HarddiskVolume.*"
+    action        = "drop"
+  }
+}
+4. Python Script – generate_river_config.py
+import yaml
+from jinja2 import Environment, FileSystemLoader
+
+# Load input services
+with open("services.yaml", "r") as f:
+    config_data = yaml.safe_load(f)
+
+# Prepare Jinja2 template engine
+env = Environment(loader=FileSystemLoader("."))
+template = env.get_template("alloy_windows_exporter_template.river.j2")
+
+# Render the template with input data
+output = template.render(windows_services_to_monitor=config_data["windows_services_to_monitor"])
+
+# Save to River config file
+with open("alloy-windows-exporter.river", "w") as f:
+    f.write(output)
+
+print("✅ River config generated: alloy-windows-exporter.river")
+5. PowerShell Script – install_alloy.ps1
+$installDir = "C:\Program Files\Grafana Labs\Alloy"
+$configPath = "$installDir\alloy-windows-exporter.river"
+$exePath = "$installDir\alloy-windows-amd64.exe"
+
+# Step 1: Create install directory
+New-Item -Path $installDir -ItemType Directory -Force
+
+# Step 2: Download latest Alloy agent
+Invoke-WebRequest -Uri "https://dl.grafana.com/alloy/latest/alloy-windows-amd64.exe" -OutFile $exePath
+
+# Step 3: Copy generated config
+Copy-Item -Path ".\alloy-windows-exporter.river" -Destination $configPath -Force
+
+# Step 4: Install Alloy as Windows service
+& $exePath service install `
+  --config.file "$configPath" `
+  --service-name "GrafanaAlloy" `
+  --service-display-name "Grafana Alloy Agent" `
+  --service-description "Grafana Alloy agent for Windows metrics and logs"
+
+# Step 5: Validate configuration (dry-run)
+Write-Output "Validating configuration..."
+& $exePath --config.file "$configPath" --dry-run
+
+# Step 6: Start the service
+Start-Service -Name "GrafanaAlloy"
+Write-Output "✅ Grafana Alloy Agent installed and started."
+6. How to Run the Setup
+Step 1: Generate the River Config
+
+python generate_river_config.py
+Step 2: Run the PowerShell Installer (As Administrator)
+
+.\install_alloy.ps1
+✅ Outcome
+Alloy Agent is installed as a service
+Config includes service-specific Windows Exporter filtering
+Metrics are scraped and ready to be forwarded (can add remote_write block to push to Grafana Cloud)
+Would you like me to extend this guide to include:
+
+remote_write block to Grafana Cloud?
+Logs collection with loki.source.windowsevent?
+NSIS-based Windows installer .exe builder?
+Let me know, and I’ll deliver the next piece!
