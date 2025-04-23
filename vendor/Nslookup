@@ -1,0 +1,36 @@
+import csv
+import socket
+
+input_file = 'input_hosts.csv'
+output_file = 'output_fqdns.csv'
+
+def resolve_fqdn(value):
+    try:
+        # Try resolving IP to hostname
+        return socket.gethostbyaddr(value)[0]
+    except (socket.herror, socket.gaierror):
+        try:
+            # Try resolving hostname to its canonical FQDN
+            return socket.getfqdn(value)
+        except Exception:
+            return "FQDN_Not_Resolved"
+
+def process_csv(input_path, output_path):
+    with open(input_path, mode='r', newline='') as infile, open(output_path, mode='w', newline='') as outfile:
+        reader = csv.DictReader(infile)
+        fieldnames = reader.fieldnames + ['fqdn']
+        writer = csv.DictWriter(outfile, fieldnames=fieldnames)
+        writer.writeheader()
+
+        for row in reader:
+            host = row.get('hostname')
+            if host:
+                fqdn = resolve_fqdn(host.strip())
+                row['fqdn'] = fqdn
+            else:
+                row['fqdn'] = "Invalid_Entry"
+            writer.writerow(row)
+
+if __name__ == "__main__":
+    process_csv(input_file, output_file)
+    print(f"FQDNs written to {output_file}")
