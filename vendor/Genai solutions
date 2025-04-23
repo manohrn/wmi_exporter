@@ -1,0 +1,2353 @@
+Creating a Health Check Agent using GenAI and Agentic AI powered by Prometheus platform metrics and observability signals (logs, metrics, traces) is a forward-looking, intelligent observability solution. Below is a detailed breakdown of how you can design, implement, and deploy such an agent in your enterprise observability stack:
+
+1. Solution Overview
+
+A self-learning AI agent continuously checks system health using Prometheus metrics, logs, and traces. It identifies anomalies, predicts failures, explains root causes, and suggests or initiates actions.
+
+2. Architecture Design
+
+A. Data Ingestion Layer
+Metrics: Prometheus scrapes infrastructure and service-level metrics.
+Logs: Centralized log aggregation via Loki/Fluentd/Splunk.
+Traces: OpenTelemetry collector sends trace data to Tempo or Splunk APM.
+Enrich with metadata: Kubernetes labels, service tags, region, team info.
+B. AI Engine (GenAI + Agentic AI)
+Use GenAI (LLMs like GPT or your internal Tachyon platform) to:
+Generate natural language insights.
+Summarize anomalies.
+Correlate signals.
+Use Agentic AI capabilities to:
+Autonomously reason over observability signals.
+Plan actions (e.g., restart a pod, trigger scale-up).
+Execute safe playbooks or escalate with context.
+C. Processing Layer
+Normalize signals via pipelines (e.g., Cribl, Fluentd, OpenTelemetry).
+Use Redis/VectorDB to store short-term telemetry and embedding cache.
+Perform temporal correlation of logs, metrics, and traces.
+D. Action & Feedback Loop
+Integrate with ServiceNow (incident creation), Slack/MS Teams (alerting), or internal runbook automation.
+Feedback into the LLM using RAG (Retrieval Augmented Generation) to improve over time.
+3. Core Capabilities
+
+Capability	Description
+Anomaly Detection	Use ML models (e.g., Prophet, Twitter AnomalyDetection) over Prometheus time series.
+Root Cause Analysis	Agent correlates spikes in metrics + error logs + trace spans to find impacted components.
+Natural Language Interface	Users ask: “Why is service X slow?” – GenAI interprets, fetches signals, and responds.
+Proactive Health Checks	Periodic synthetic checks + infra metric analysis + historical patterns.
+Autonomous Actions	Based on confidence, it can restart pods, notify on-call, or raise ServiceNow tickets.
+4. Implementation Stages
+
+Stage 1 – Data Foundation
+Ensure Prometheus, Loki, Tempo or equivalent tools are deployed.
+Set up OTel pipeline for logs/traces if not already in place.
+Aggregate metrics (e.g., CPU, memory, request latency) at service/pod/node levels.
+Stage 2 – Build AI-Powered Health Agent
+Use a Python-based GenAI agent framework like LangGraph, CrewAI, or AutoGen.
+Plug in telemetry collectors as tools (e.g., PromQL fetcher, Loki query, trace query).
+Use embeddings to store historical issue-resolution patterns.
+Stage 3 – Interaction Layer
+Build a chat-based interface or dashboard integration in Grafana/Slack.
+Use RAG to pull relevant context from past incidents/runbooks.
+Stage 4 – Self-Improving Loop
+Log every response and result.
+Use fine-tuning or feedback scoring to improve future suggestions.
+Reinforce successful remediation actions into the agent memory.
+5. Sample Query Chain (Agent Flow)
+
+User Input: “Why is CPU high on node-3?”
+Agent Response Flow:
+
+Parse the question and extract entities.
+Run avg_over_time(node_cpu_seconds_total[5m]) from Prometheus.
+Query Loki for logs from node-3 around the spike.
+Fetch any span anomalies from tracing backend.
+Synthesize a root cause using LLM.
+Present a summary and recommend a fix (e.g., drain node, reduce replica count, etc.).
+6. Optional Enhancements
+
+Use LangGraph to implement multi-step plans (query > correlate > diagnose > act).
+Train anomaly detection on historical Prometheus data using Kats, Facebook Prophet, or NeuralProphet.
+Integrate with Cribl for telemetry enrichment and transformation.
+Store context in Weaviate / Pinecone for fast retrieval during RAG workflows.
+7. Executive Summary (For Leadership Deck)
+
+Objective: Build an intelligent, autonomous health check agent using GenAI and Agentic AI that leverages platform metrics, logs, and traces from Prometheus and other observability sources.
+Value: Reduce MTTR, eliminate false positives, enhance visibility, and drive automation with intelligence.
+Outcome: A self-learning observability assistant that diagnoses, explains, and acts—making operations resilient and efficient.
+Would you like a slide deck, sample Python LangGraph code, or a workflow diagram to present to leadership?
+
+You said:
+Provide me the detailed project which needs to be deployed to prod with code and action scripts. 
+ChatGPT said:
+Got it. To tailor the production-ready project for deploying a GenAI-based health check agent using Prometheus metrics, logs, and traces, could you please clarify the following:
+
+What is your preferred language for implementation (e.g., Python, Go, TypeScript)?
+Do you have a preferred framework for the agent (e.g., LangGraph, CrewAI, AutoGen, custom Python agent)?
+Which platforms/tools are already part of your stack (e.g., Prometheus, Loki, Tempo, Grafana Cloud, OpenTelemetry, Kubernetes)?
+What kind of actions do you want the agent to be able to execute autonomously (e.g., pod restart, scale services, raise incidents, notify via Slack)?
+Do you want the GenAI to be hosted in-house or use an external API like OpenAI?
+Once I have this info, I’ll put together a full production-ready implementation with code, action scripts, and deployment details.
+
+You said:
+Python 
+Prometheus 
+Pod restart
+In-house or external
+ChatGPT said:
+Great. I’ll create a detailed, production-ready project in Python that deploys a GenAI-based health check agent integrating with Prometheus. It will analyze metrics and observability data to determine system health and trigger pod restarts if needed. The setup will support either in-house or external LLMs.
+
+I'll include full code, action scripts, and deployment guidance suitable for Kubernetes environments. I'll let you know as soon as it's ready.
+
+Research completed in 8m · 10 sources
+GenAI-Powered Kubernetes Health Check Agent
+
+Project Overview
+
+We will develop a GenAI-based health check agent for Kubernetes clusters that leverages Prometheus metrics and generative AI to monitor system health, generate natural-language insights, and automatically remediate issues. This agent runs as a containerized service in Kubernetes, periodically assessing cluster metrics (and optionally logs/traces) to detect anomalies or unhealthy components. By integrating an LLM (Large Language Model) engine, the agent translates raw observability data into human-readable diagnostics and decisions. In case of detected failures, it can proactively restart pods or perform other actions to restore service health. Key Features:
+Prometheus Integration: Query cluster metrics (CPU, memory, error rates, etc.) via Prometheus API for real-time health signals.
+GenAI Analysis: Feed metrics (and optionally logs/traces) into a generative AI (either an in-house model or external API like OpenAI) to interpret anomalies and produce insightful summaries of cluster health.
+Automated Remediation: On detecting critical issues (e.g., a pod stuck in crash loop or high error rates), automatically trigger Kubernetes actions such as pod restarts or rollout restarts of deployments.
+Observability Data Ingestion: Extensible design to include logs and traces for richer context – the agent can fetch recent logs from pods or integrate with a log aggregator, and incorporate trace data if available, enhancing the AI’s analysis.
+Containerized & Deployable: The entire project is delivered as a Docker container, with Kubernetes deployment manifests (YAML/Helm) for easy rollout. Configuration (Prometheus endpoint, model API keys, etc.) is externalized via config files or environment variables.
+Modular & Extensible: Clean Python module structure to allow adding new data sources or actions (e.g., scaling pods, notifying Slack) in the future. The code emphasizes readability, logging, and error handling for production use.
+CLI/Web Interface (Optional): A simple CLI command or lightweight web UI to query the agent on-demand (e.g., ask “What is the cluster status?”) and get an AI-generated answer.
+This agent addresses the growing need for intelligent Kubernetes monitoring. Traditional monitoring generates alerts on static thresholds, whereas a GenAI agent can identify complex patterns and suggest remediation in plain English. Recent tools like K8sGPT illustrate the power of AI-driven Kubernetes diagnostics, detecting problems and explaining issues even to novice users​
+komodor.com
+​
+linkedin.com
+. Our project takes this further by not only identifying issues from metrics but also acting on them automatically, thereby reducing manual intervention and improving cluster reliability​
+komodor.com
+.
+Architecture & Components
+
+Architecture Overview: The GenAI health check agent consists of several interacting components, all running within a Kubernetes cluster:
+Prometheus Client (Metrics Collector): Connects to the Prometheus service (via HTTP API) to retrieve relevant metrics on a schedule. These metrics might include pod statuses, error rates, resource utilization, etc.
+AI Analysis Engine: Takes the raw metrics (and any other signals) and crafts a prompt for the LLM. The LLM (either a local model or external service) returns a natural-language interpretation of cluster health and possibly recommended actions.
+Action Executor: Based on the AI’s analysis and predefined rules, this component executes remediation actions. Initially, the main action is pod restart for pods deemed unhealthy (e.g., stuck in CrashLoopBackOff, high error rates). This uses Kubernetes API (or kubectl commands) to delete or restart pods, letting the cluster self-heal​
+spacelift.io
+.
+Logging & Observability: The agent logs its own actions and can fetch additional context (like recent pod logs or events) to provide to the AI. It can also expose its findings as custom metrics or alerts for integration with dashboards (e.g., Grafana)​
+linkedin.com
+​
+linkedin.com
+.
+Configuration & Interfaces: All endpoints, API keys, and thresholds are configurable via a config file or environment variables. The agent can run continuously as a Deployment, and optionally expose a REST API or CLI for on-demand queries.
+Below is a high-level flow of the agent's operation:
+Metric Scraping: At regular intervals (or triggered by an external event), the agent queries Prometheus for the latest metrics of interest (for example: pod status conditions, CPU/memory usage per node, HTTP error rates of services, etc.).
+Anomaly Detection via LLM: The collected data is formatted into a prompt (e.g., "The following metrics were observed: ... What are the anomalies or health issues?"). The GenAI model evaluates this and responds with an analysis, highlighting any concerns (like “Pod X is crash looping” or “High latency detected on service Y”) and may suggest a cause or fix.
+Decision & Action: The agent parses the LLM’s output. If certain keywords or risk levels are identified (or the agent uses another lightweight rule layer on metrics), it triggers remedial actions. For a severe issue isolated to a pod, it will initiate a restart of that pod (by deleting it so the ReplicaSet/Deployment brings a new one​
+spacelift.io
+). The agent could also trigger other actions (scale deployment, notify team, etc.) if configured.
+Output & Learning: The result (AI insight and any actions taken) is logged and optionally sent to a dashboard or stored. These insights can be reviewed by SREs, and over time the prompts or thresholds can be tuned. The modular design allows adding more actions (like scaling resources) or feeding in more data (like trend of a metric over time for AI to do predictive analysis).
+Extensibility: Because all major parts (data collection, AI analysis, actions) are decoupled, we can easily extend the agent. For instance, to incorporate logs, one could add a LogCollector module that tailors recent pod logs (perhaps using the Kubernetes API or a logging system’s API) and appends those to the LLM prompt for deeper analysis. GenAI’s ability to perform advanced data analysis on resource usage metrics can enable predictive scaling and anomaly detection proactively​
+komodor.com
+​
+komodor.com
+, so future enhancements might include automatic scaling or replication adjustments (not just restarts). Next, we detail each component and provide code snippets and configurations as part of a production-ready project structure.
+Implementation Details
+
+We'll outline the project structure and highlight key parts of the implementation. The code is written in Python for clarity and uses common libraries (requests for HTTP, Kubernetes client for actions, etc.). In a real project, you would organize this into a Python package with multiple modules. Below is an example structure:
+genai_health_agent/
+├── README.md
+├── runbook.md
+├── config.yaml              # Configuration for Prometheus, LLM, etc.
+├── main.py                  # Entry point of the agent service
+├── prometheus_client.py     # Module to query Prometheus
+├── ai_analyzer.py           # Module to call LLM and process output
+├── action_executor.py       # Module to handle remediation actions (pod restarts, etc.)
+├── k8s_client.py            # Helper for Kubernetes API interactions
+├── cli.py                   # (Optional) CLI interface for ad-hoc queries
+├── requirements.txt
+├── Dockerfile
+└── k8s-manifests/
+    ├── deployment.yaml
+    ├── service.yaml        # (Optional) if exposing a service/API
+    ├── role.yaml           # RBAC for permissions
+    └── ... (other manifests or Helm chart files)
+Let's go through each main component with code excerpts and explanation:
+1. Prometheus Metrics Client
+The Prometheus client is responsible for querying the Prometheus HTTP API for the required metrics. We can use the REST API endpoint /api/v1/query (or /api/v1/query_range for time series) to fetch metrics. In Python, this can be done with the requests library or a specialized client library. For simplicity, we'll use direct HTTP requests. prometheus_client.py:
+import requests
+import logging
+
+class PrometheusClient:
+    def __init__(self, base_url: str, auth_token: str = None):
+        """
+        Initialize with the Prometheus base URL (e.g., http://prometheus:9090) and 
+        optional auth token if Prometheus requires authentication.
+        """
+        self.base_url = base_url.rstrip('/')
+        self.headers = {}
+        if auth_token:
+            self.headers['Authorization'] = f'Bearer {auth_token}'
+        logging.debug(f"PrometheusClient initialized for {self.base_url}")
+
+    def query(self, promql: str):
+        """Query Prometheus with a PromQL query string. Returns the result JSON."""
+        url = f"{self.base_url}/api/v1/query"
+        try:
+            resp = requests.get(url, params={'query': promql}, headers=self.headers, timeout=5)
+            resp.raise_for_status()
+        except Exception as e:
+            logging.error(f"Error querying Prometheus: {e}")
+            return None
+        data = resp.json()
+        if data.get('status') != 'success':
+            logging.warning(f"Prometheus query failed: {data}")
+            return None
+        return data['data']['result']
+
+    def get_cluster_health_metrics(self):
+        """Fetch a predefined set of key metrics indicating cluster health."""
+        metrics = {}
+        # Example queries – these can be adjusted based on what's important:
+        try:
+            # 1. Pod restarts in the last 5 minutes (could indicate crashing pods)
+            restart_query = 'increase(kube_pod_container_status_restarts_total[5m])'
+            metrics['pod_restarts_5m'] = self.query(restart_query)
+            
+            # 2. CPU usage per node (to detect high utilization)
+            cpu_query = 'avg(node_cpu_seconds_total{mode!="idle"} * 100 / scalar(node_cpu_seconds_total)) by (instance)'
+            metrics['node_cpu_percent'] = self.query(cpu_query)
+            
+            # 3. High error rate for any deployment (HTTP 5xx in last 5m)
+            error_query = 'sum(rate(http_requests_total{status=~"5.."}[5m])) by (service)'
+            metrics['error_rate_5m'] = self.query(error_query)
+            
+            # 4. Pod not ready count
+            not_ready_query = 'sum(kube_pod_status_ready{condition="false"})'
+            metrics['pods_not_ready'] = self.query(not_ready_query)
+            
+            # (Add more queries as needed...)
+        except Exception as e:
+            logging.error(f"Failed to fetch some Prometheus metrics: {e}")
+        return metrics
+In the above code, PrometheusClient.query() executes a PromQL query and returns the results. The get_cluster_health_metrics() method demonstrates how to gather a set of metrics that might signal cluster health issues:
+Pod restarts in the last 5 minutes: could indicate crash loops.
+Node CPU usage: to spot any node under high load.
+Error rate across services: identifies failing services (HTTP 5xx).
+Pods not ready: how many pods are in NotReady state.
+These are just examples; in practice, you’d include memory usage, pod OOMkill count, etc., and tune queries to your environment. The idea is to gather a snapshot of cluster health data.
+2. GenAI Analysis Engine
+The AI engine takes the metrics and produces a natural language assessment. It abstracts the use of different LLM providers. We design it to support two modes: external API (like OpenAI GPT-4) or local model (in-house). Configuration (in config.yaml) might look like:
+llm:
+  provider: "openai"        # or "local"
+  model: "gpt-4"            # model name or path
+  api_key: "OPENAI_API_KEY" # if needed for external
+  prompt_template: | 
+    You are a Kubernetes health assistant. Analyze the following metrics and give a summary of the cluster health, 
+    mentioning any anomalies or issues and suggested actions:
+    {metrics}
+The prompt_template defines how we format the prompt for the model, inserting the metrics. ai_analyzer.py:
+import logging
+# We assume if using OpenAI, the `openai` package is installed.
+# For a local model, one might use HuggingFace transformers.
+
+class AIAnalyzer:
+    def __init__(self, provider: str, model_name: str, api_key: str = None, prompt_template: str = None):
+        self.provider = provider
+        self.model_name = model_name
+        self.api_key = api_key
+        # If no custom prompt template provided, use a default.
+        self.prompt_template = prompt_template or "Analyze Kubernetes metrics and provide health report:\n{metrics}"
+        # Setup provider-specific initialization
+        if self.provider == "openai":
+            try:
+                import openai
+                openai.api_key = api_key
+                self.openai = openai
+            except ImportError:
+                logging.error("openai package not installed. Install openai to use OpenAI API.")
+                self.openai = None
+        elif self.provider == "local":
+            try:
+                from transformers import AutoModelForCausalLM, AutoTokenizer
+                self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+                self.model = AutoModelForCausalLM.from_pretrained(model_name)
+            except Exception as e:
+                logging.error(f"Failed to load local model {model_name}: {e}")
+                self.model = None
+
+    def analyze(self, metrics: dict) -> str:
+        """Generate a health analysis from given metrics. Returns a natural language summary."""
+        # Format metrics into a string to feed the model
+        metrics_text = ""
+        for key, val in metrics.items():
+            metrics_text += f"\n- {key}: {val}"
+        prompt = self.prompt_template.replace("{metrics}", metrics_text)
+
+        logging.info("Sending metrics to LLM for analysis...")
+        try:
+            if self.provider == "openai":
+                # Use OpenAI completion API (assuming GPT-4 or similar)
+                response = self.openai.ChatCompletion.create(
+                    model=self.model_name,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=300,
+                    temperature=0
+                )
+                result = response['choices'][0]['message']['content'].strip()
+            elif self.provider == "local":
+                # For local model, perform inference (this is a placeholder example; real implementation might differ)
+                if not self.model:
+                    return "Local model not available."
+                inputs = self.tokenizer(prompt, return_tensors='pt')
+                outputs = self.model.generate(**inputs, max_new_tokens=300)
+                result = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+            else:
+                result = "Invalid LLM provider configuration."
+        except Exception as e:
+            logging.error(f"LLM analysis failed: {e}")
+            result = "Error analyzing metrics."
+        return result
+In AIAnalyzer.analyze(), we craft the prompt with the metrics. For example, if metrics_text contains pod_restarts_5m and others, the prompt might look like:
+You are a Kubernetes health assistant... 
+- pod_restarts_5m: [{pod="abc-123", value="5"}, {pod="xyz-789", value="0"}]
+- node_cpu_percent: [{instance="node1", value="75"}, {instance="node2", value="55"}]
+- error_rate_5m: [{service="payments", value="0.2"}, {service="auth", value="5.1"}]
+- pods_not_ready: 2
+The LLM would then respond with something like: "It appears that the auth service has a high error rate (5 req/s failing). Also, pod 'abc-123' restarted 5 times in 5m, indicating a crash loop. Node1 CPU is at 75% which is moderately high. Overall, the cluster has an issue with the auth service. Recommend investigating the auth pod logs and possibly restarting it." The AIAnalyzer is written to handle both OpenAI and local models (via HuggingFace in the example). In production, using the OpenAI API would require setting the OPENAI_API_KEY. A local model path could be a fine-tuned LLM on company data if offline usage is needed. Note: The prompt template can be refined to improve the quality of insights. Also, you may want to include recent log snippets in the prompt if a particular pod shows issues, for more context.
+3. Kubernetes Action Executor (Pod Restarts & More)
+The action executor component receives the analysis (in natural language or structured form) and decides what to do. For this version, we focus on pod restarts as the automated remediation. We will parse the AI output for cues (or rely on internal logic using the metrics) to decide which pods to restart. A simple approach: if the AI text contains phrases like “restart” or identifies a specific pod name, we attempt that action. For safety in production, you might want explicit structured output from the AI (e.g., a JSON with actions), but that requires prompt engineering or fine-tuning. For now, assume the AI might say, "Pod X might need a restart." We'll detect pod X and perform the restart. k8s_client.py (for Kubernetes API interactions):
+from kubernetes import client, config
+
+class KubernetesClient:
+    def __init__(self, kubeconfig=None):
+        # If running inside cluster, use in-cluster config
+        if kubeconfig is None:
+            config.load_incluster_config()
+        else:
+            config.load_kube_config(kubeconfig)
+        self.core_v1 = client.CoreV1Api()
+        self.apps_v1 = client.AppsV1Api()
+
+    def restart_pod(self, namespace: str, pod_name: str) -> bool:
+        """Delete the given pod; Kubernetes will schedule a replacement if part of a ReplicaSet/Deployment."""
+        try:
+            logging.info(f"Deleting pod {pod_name} in namespace {namespace} for restart.")
+            self.core_v1.delete_namespaced_pod(name=pod_name, namespace=namespace, grace_period_seconds=0)
+            logging.info(f"Pod {pod_name} deleted successfully.")
+            return True
+        except Exception as e:
+            logging.error(f"Failed to delete pod {pod_name}: {e}")
+            return False
+
+    def rollout_restart(self, namespace: str, deployment_name: str) -> bool:
+        """Trigger a rollout restart of a deployment (restart all its pods)."""
+        try:
+            body = {'spec': {'template': {'metadata': {'annotations': {'restarted-at': str(datetime.now())}}}}}
+            self.apps_v1.patch_namespaced_deployment(name=deployment_name, namespace=namespace, body=body)
+            logging.info(f"Deployment {deployment_name} patched with new annotation to trigger rollout.")
+            return True
+        except Exception as e:
+            logging.error(f"Failed to rollout restart deployment {deployment_name}: {e}")
+            return False
+We provide two methods: restart_pod which deletes a specific pod (assuming a controller will make a new one), and rollout_restart which touches the deployment spec to force a rollout (this is effectively what kubectl rollout restart does by adding an annotation). The latter could be useful if the AI identifies a whole deployment issue rather than a single pod. action_executor.py:
+import re
+import logging
+from k8s_client import KubernetesClient
+
+class ActionExecutor:
+    def __init__(self):
+        # Using in-cluster config by default
+        self.k8s = KubernetesClient()
+    
+    def execute_actions(self, analysis_text: str):
+        """
+        Parse the analysis text and execute any determined actions.
+        Returns a list of actions taken.
+        """
+        actions_taken = []
+        # Simple parsing logic: look for "restart" and a pod or deployment name in the text
+        text = analysis_text.lower()
+        # Example: "restart pod abc-123" or "restart deployment xyz"
+        pod_match = re.search(r'restart pod\s+([0-9a-zA-Z\-\_]+)', text)
+        if pod_match:
+            pod_name = pod_match.group(1)
+            # If no namespace mentioned, assume default or a configured namespace
+            if self.k8s.restart_pod(namespace="default", pod_name=pod_name):
+                actions_taken.append(f"restarted pod {pod_name}")
+        # Check for deployment restart suggestion
+        deploy_match = re.search(r'restart deployment\s+([0-9a-zA-Z\-\_]+)', text)
+        if deploy_match:
+            deploy_name = deploy_match.group(1)
+            if self.k8s.rollout_restart(namespace="default", deployment_name=deploy_name):
+                actions_taken.append(f"rolled out restart for deployment {deploy_name}")
+        
+        if not actions_taken:
+            logging.info("No explicit restart actions found in analysis. No action taken.")
+        else:
+            logging.info(f"Actions executed: {actions_taken}")
+        return actions_taken
+This simplistic parser looks for phrases like "restart pod X" or "restart deployment Y" in the LLM’s output. In practice, you might have the agent itself decide based on metric thresholds (e.g., if pod_restarts_5m > N for a pod, just restart it). A safer design is to have the AI suggest but a rule engine confirm actions. Either way, the ActionExecutor triggers the KubernetesClient methods to perform the restart. Production considerations: Ensure the service account running the agent has permission to delete pods / patch deployments. In Kubernetes RBAC, this means a role with delete on pods, and patch on deployments (if using rollout). We'll provide an example RBAC policy in the deployment manifests. According to Kubernetes best practices, deleting a pod will cause it to be recreated by its controller​
+spacelift.io
+, effectively achieving a restart, which is a common technique when a pod is in a bad state.
+4. Main Orchestration Logic
+The main.py ties everything together. It loads configuration, initializes the Prometheus client, AI analyzer, and then enters a monitoring loop. It can either run continuously with a sleep interval, or respond to an external scheduler (like a CronJob or manual trigger). main.py:
+import time
+import yaml
+import logging
+from prometheus_client import PrometheusClient
+from ai_analyzer import AIAnalyzer
+from action_executor import ActionExecutor
+
+# Load config
+with open("config.yaml") as f:
+    config = yaml.safe_load(f)
+
+# Configure logging
+logging.basicConfig(level=logging.INFO,
+                    format="%(asctime)s [%(levelname)s] %(message)s")
+
+prom_cfg = config['prometheus']
+llm_cfg = config['llm']
+
+prom = PrometheusClient(base_url=prom_cfg['url'], auth_token=prom_cfg.get('auth_token'))
+ai = AIAnalyzer(provider=llm_cfg['provider'], model_name=llm_cfg['model'], 
+                api_key=llm_cfg.get('api_key'), prompt_template=llm_cfg.get('prompt_template'))
+executor = ActionExecutor()
+
+interval = config.get('check_interval_seconds', 300)  # default 5 minutes
+logging.info("GenAI Health Check Agent started. Monitoring cluster health...")
+
+while True:
+    # 1. Collect Metrics
+    metrics = prom.get_cluster_health_metrics()
+    if not metrics:
+        logging.warning("No metrics retrieved from Prometheus. Skipping this cycle.")
+    else:
+        # 2. AI Analysis
+        analysis = ai.analyze(metrics)
+        logging.info(f"AI Analysis:\n{analysis}")
+        # 3. Execute Actions based on analysis
+        actions = executor.execute_actions(analysis)
+        if actions:
+            logging.info(f"Actions taken this cycle: {actions}")
+    # 4. Wait for next cycle
+    time.sleep(interval)
+In main.py, after initialization, an infinite loop runs the health check every check_interval_seconds (which we default to 300 seconds = 5 min). Each cycle:
+Fetches metrics from Prometheus.
+Calls the AI analyzer to get a health report.
+Logs the AI’s report, and passes the text to the ActionExecutor.
+Any actions (pod restarts) are executed and logged.
+Sleeps until the next cycle.
+This loop could also be replaced with event-driven triggers (for example, call get_cluster_health_metrics when Prometheus alerts fire, or run on a schedule via Kubernetes CronJob). But a simple loop in a Deployment is straightforward for continuous monitoring.
+5. Optional CLI or Web Interface
+For interactive use, we can provide a CLI tool or a web endpoint. CLI can be as simple as running the main logic once and printing output, or allowing the user to specify a query. For example, cli.py could accept a namespace or resource to specifically check:
+# cli.py
+import argparse
+from prometheus_client import PrometheusClient
+from ai_analyzer import AIAnalyzer
+
+parser = argparse.ArgumentParser(description="Query the GenAI Health Agent for cluster status.")
+parser.add_argument("--query", help="Custom PromQL query to run instead of default health checks.")
+args = parser.parse_args()
+
+# Initialize as in main (could refactor to avoid code duplication)
+# ... (similar init for prom and ai) ...
+if args.query:
+    result = prom.query(args.query)
+    metrics = {args.query: result}
+else:
+    metrics = prom.get_cluster_health_metrics()
+
+analysis = ai.analyze(metrics)
+print("AI Analysis Result:")
+print(analysis)
+This CLI allows an SRE to run an on-demand analysis, possibly focusing on a particular query if needed. A web interface could be a small Flask or FastAPI app that exposes an endpoint (e.g., /health-insight) which runs the same logic and returns the analysis as JSON or text. Given it’s optional, we won't detail it fully, but the project is structured to easily integrate such an interface on top of the core modules.
+6. Configuration and Security
+All sensitive or environment-specific data is kept in config files or environment variables, not hard-coded. For instance:
+Prometheus URL and auth (if any) in config.yaml.
+LLM API keys in config.yaml or passed via environment variable (e.g., set OPENAI_API_KEY in the container and have the code pick it up).
+The config can also include thresholds or toggles for actions (like an option enable_autoremediation: true/false to allow turning off automatic restarts if needed).
+Example config.yaml:
+prometheus:
+  url: "http://prometheus-server.monitoring.svc:9090"   # Cluster-internal URL for Prometheus
+  auth_token: ""   # if Prom requires auth (leave blank if not)
+
+llm:
+  provider: "openai"        # or "local"
+  model: "gpt-4"            # model name for OpenAI or path for local model
+  api_key: "${OPENAI_API_KEY}"   # can reference environment variable
+  prompt_template: |
+    You are a Kubernetes health assistant. Analyze the following metrics and provide a brief report on cluster health, 
+    highlighting any issues and recommended actions:
+    {metrics}
+
+# How often to run checks (in seconds)
+check_interval_seconds: 300
+
+# Namespace scope (if the agent should only monitor a specific namespace)
+target_namespace: "default"
+We could also use a .env file or direct env vars for things like API keys so that they are not stored in plain text in the config file. The code would read them accordingly. Security: Ensure that the Kubernetes ServiceAccount used by this agent has the minimal required permissions:
+Read metrics from Prometheus (Prometheus itself usually doesn’t require auth inside cluster, or uses its own auth).
+List and delete pods (for restarts) in the relevant namespace(s).
+Patch deployments (if using rollout restarts).
+Possibly read pods/logs (if fetching logs for analysis).
+We will include an RBAC policy in our Kubernetes manifest to grant these permissions.
+Containerization (Docker) and Deployment
+
+Now that we have the core logic, we prepare it for deployment:
+Dockerfile
+A simple Dockerfile to containerize the Python application might look like:
+# Use a lightweight Python base image
+FROM python:3.10-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+# Copy the application code
+COPY . .
+
+# (Optional) For local models, handle model weights download here if needed
+
+# Use a non-root user for security
+RUN adduser --disabled-password agentuser
+USER agentuser
+
+# Set an entrypoint for the container
+ENTRYPOINT ["python", "-u", "main.py"]
+requirements.txt would list necessary libraries, e.g.:
+PyYAML
+requests
+kubernetes
+openai      # if using OpenAI API
+transformers  # if using local models
+After building this image (e.g., docker build -t genai-health-agent:1.0 .), it can be pushed to a registry accessible by the cluster.
+Kubernetes Deployment Manifests
+We provide Kubernetes manifests to deploy the agent. For a production-ready setup, a Helm chart is ideal for flexibility, but we'll demonstrate with raw YAML here. 1. Namespace (optional): If we want a separate namespace for it (or reuse an existing monitoring namespace). 2. Service Account and RBAC: The agent needs permissions to delete pods (and possibly get pods/logs). We create a ServiceAccount and bind an appropriate role. For cluster-wide pod management, a ClusterRole is used; if we limit to a namespace, a Role would suffice (adjust accordingly).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: genai-agent-sa
+  namespace: default  # or monitoring
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: genai-agent-clusterrole
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "delete"]   # allow viewing and deleting pods
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  verbs: ["patch"]   # for rollout restart (patching deployment)
+- apiGroups: [""]
+  resources: ["pods/log"]
+  verbs: ["get"]   # if we want to read pod logs for context
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: genai-agent-clusterrolebinding
+subjects:
+- kind: ServiceAccount
+  name: genai-agent-sa
+  namespace: default
+roleRef:
+  kind: ClusterRole
+  name: genai-agent-clusterrole
+  apiGroup: rbac.authorization.k8s.io
+3. Deployment: We create a Deployment for the agent. It will run a single replica (we might scale it later or run one per namespace if needed). We mount the configuration (configMap or secret for sensitive parts).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: genai-health-agent
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: genai-health-agent
+  template:
+    metadata:
+      labels:
+        app: genai-health-agent
+    spec:
+      serviceAccountName: genai-agent-sa
+      containers:
+      - name: agent
+        image: your-docker-registry/genai-health-agent:1.0
+        imagePullPolicy: Always
+        env:
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: genai-agent-secrets
+              key: openai_api_key
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        volumeMounts:
+        - name: config-volume
+          mountPath: /app/config.yaml
+          subPath: config.yaml
+      volumes:
+      - name: config-volume
+        configMap:
+          name: genai-agent-config
+In the above:
+We use a genai-agent-sa ServiceAccount attached to the pod for RBAC.
+The container image should be replaced with the actual image name.
+We pass the OpenAI API key via an environment variable sourced from a Kubernetes Secret called genai-agent-secrets. (That secret should be created separately with the key).
+We mount a ConfigMap (named genai-agent-config) containing the config.yaml file at /app/config.yaml inside the container.
+4. ConfigMap and Secret: The ConfigMap holds non-sensitive config (like Prometheus URL, provider choice), and the Secret holds sensitive data (like API keys). For example:
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: genai-agent-config
+  namespace: default
+data:
+  config.yaml: |
+    prometheus:
+      url: "http://prometheus-server.monitoring.svc.cluster.local:9090"
+    llm:
+      provider: "openai"
+      model: "gpt-4"
+      prompt_template: |
+        You are a Kubernetes health assistant...
+    check_interval_seconds: "300"
+    target_namespace: "default"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: genai-agent-secrets
+  namespace: default
+stringData:
+  openai_api_key: "sk-xxx..."   # replace with actual key in real deployment (or use kubectl create secret)
+By separating these, we can manage secrets securely. In real deployments, you'd create the Secret via kubectl create secret so the key isn't exposed in plain text in any repo or manifest file. 5. (Optional) Service/Ingress: If we included a web interface for the agent (e.g., a REST API to query health), we would define a Service and possibly an Ingress to expose it. Since our current design runs internally and logs to stdout (which can be collected by logging systems), we might not need to expose a service. But it’s possible to add, for example:
+apiVersion: v1
+kind: Service
+metadata:
+  name: genai-agent-service
+spec:
+  selector:
+    app: genai-health-agent
+  ports:
+    - name: http
+      port: 5000
+      targetPort: 5000
+if our agent had an HTTP server component listening on 5000.
+README and Operational Runbook
+
+Finally, we provide documentation to ensure users (devops/SRE teams) can deploy and operate the agent effectively.
+README (Excerpt)
+Project: GenAI Kubernetes Health Check Agent Description: This project provides a Kubernetes-native agent that uses generative AI to monitor cluster health, summarize issues in natural language, and auto-remediate common problems (like restarting unhealthy pods). It integrates with Prometheus for metrics and can be extended to use logs and traces for more context. Features:
+Automated health analysis with AI (anomaly detection, trend analysis).
+Integration with Prometheus (metrics) and Kubernetes API (actions).
+Pluggable AI backend (OpenAI GPT-4 or local models).
+Dockerized for easy deployment on Kubernetes.
+Getting Started:
+Prerequisites: Kubernetes cluster with Prometheus installed (the agent needs access to the Prometheus HTTP API). Python 3.10+ if running locally for testing. Docker for building the image. Optional: An OpenAI API key if using OpenAI’s service.
+Setup: Update config.yaml with your Prometheus endpoint and AI settings. Create a Kubernetes Secret for any API keys. Adjust RBAC if needed (by default it’s cluster-wide pod delete and deployment patch).
+Run Locally (for testing): You can test the agent on your local machine by setting up KUBECONFIG to point to your cluster and running:
+export OPENAI_API_KEY=<your_key>
+python main.py
+This assumes you have network access to Prometheus. The agent will log output to console.
+Docker Build:
+docker build -t <your-registry>/genai-health-agent:1.0 .
+docker push <your-registry>/genai-health-agent:1.0
+Deploy to Kubernetes: Apply the manifests in k8s-manifests/:
+kubectl apply -f k8s-manifests/namespace.yaml   # if using a custom namespace
+kubectl apply -f k8s-manifests/role.yaml 
+kubectl apply -f k8s-manifests/configmap.yaml 
+kubectl apply -f k8s-manifests/secret.yaml 
+kubectl apply -f k8s-manifests/deployment.yaml
+Ensure the image reference in the Deployment is correct. Once deployed, the agent pod should start and begin monitoring. Logs can be viewed via kubectl logs.
+Using the Agent: The agent runs continuously. You can adjust the check interval via the config. If you've enabled the optional REST API interface, you can port-forward the service and query it. If using the CLI approach, you might run the job manually outside the cluster.
+Customization: Modify prometheus_client.py to add or change which PromQL metrics are fetched. Adjust prompt_template in config to tune the AI’s response style. Use a different model by changing llm.provider and llm.model (for example, use a hosted HuggingFace model endpoint or local weights).
+Example Output: (from logs or CLI)
+"Cluster appears mostly healthy. Node1 is at 75% CPU which is within normal range. However, the auth service shows elevated error rate (~5 errors/sec) and the pod auth-xyz has restarted 5 times in 5 minutes. This suggests the auth service is crashing frequently. The agent has restarted pod auth-xyz to restore service. No other issues detected." This sample insight shows how the AI summarizes multiple metrics into a coherent analysis, and the agent took action on the crashing pod.
+Operational Runbook
+Monitoring the Agent: Once deployed, ensure the GenAI agent itself is healthy. It’s a good practice to add Prometheus metrics or liveness probes for the agent. For example, the agent could expose a metric like genai_agent_actions_total counting how many actions taken, or a simple heartbeat. Also set a Kubernetes liveness probe to restart the agent if it hangs (though our loop is straightforward, issues could arise if the LLM call hangs; one could add timeouts or use threads). Regular Logs Review: The agent’s logs (which include the AI’s analysis and any actions) should be collected (e.g., through FluentBit/Elastic or CloudWatch) and periodically reviewed. They provide a narrative of cluster events. This is especially important early on to ensure it's making correct decisions and not doing harm (e.g., restarting pods too often). Failure Modes: If the LLM fails (API outage or high latency) – the agent currently logs the error and skips actions. In a critical environment, you might want a fallback mechanism (like use simpler rule-based logic if AI fails). Monitor for log messages like "LLM analysis failed" in the agent logs. Tuning and Improving: Over time, you may discover the AI occasionally misinterprets metrics or gives unneeded suggestions. You can refine the prompt or provide examples (few-shot learning in the prompt) to guide it. Also, adding more precise rules in ActionExecutor (e.g., only restart if certain metric thresholds are exceeded and AI suggests it) can make it safer. Generative AI is powerful but can sometimes be verbose or hallucinate; constrain the prompt to factual metrics to reduce that risk. Scaling Considerations: If monitoring a very large cluster, a single agent might become overwhelmed. Since it’s mostly I/O bound (fetch metrics, call AI), you could horizontally scale the agent (multiple replicas). However, ensure they don’t all perform the same actions simultaneously. One approach is to partition by namespace (each agent handles one namespace’s resources). Alternatively, run the core metric collection in one place and have AI analysis as a separate service. Our design is modular enough to adapt to such distributed setups. Disable/Enable Actions: In production, there may be times you want to run in “dry-run” mode (only report, no remediate). This can be controlled via config (e.g., an enable_actions: false flag that ActionExecutor checks). During initial deployment, it’s wise to run with actions disabled, observe the suggestions, and if they look correct, gradually enable the automated remediation. Incident Response: If the agent does restart a pod or perform an action, it will log it. Ensure your team is aware that these automated actions are happening. You might integrate notifications — e.g., the agent could send a message to a Slack channel or create an incident ticket when it performs a restart. This keeps humans in the loop. The modular design allows adding a notifier module for such integrations. Upgrading the Model: The AI model or API can be updated (for example, OpenAI releases a new version or you train a custom model). To update, you’d adjust the config and possibly the AIAnalyzer if the interface changes. Always test with the new model in a staging setup to ensure the responses are still useful.
+Conclusion
+
+We have outlined a comprehensive GenAI-based health check agent for Kubernetes, complete with integration to Prometheus for metric collection, an LLM for intelligent analysis, and the capability to auto-heal by restarting pods. The project is structured for production readiness with modular code, containerization, and deployment manifests. Generative AI in Kubernetes operations can significantly reduce the manual effort for SREs by automating anomaly detection and remediation​
+komodor.com
+​
+komodor.com
+. By analyzing resource usage and performance metrics, the AI agent enables proactive cluster management, preventing issues before they escalate​
+komodor.com
+. With this agent deployed, teams can gain natural-language insights into their cluster’s health and trust the system to handle routine failures automatically, thus improving reliability and uptime. Sources:
+Komodor Blog – Leveraging GenAI to Enhance Kubernetes Reliability: Describes how GenAI automates Kubernetes ops (log analysis, anomaly detection) and mentions open-source K8sGPT for diagnostics​
+komodor.com
+​
+komodor.com
+.
+LinkedIn Article – Integrating K8sGPT with Prometheus: Discusses an operator that scrapes Prometheus metrics and uses AI-driven analysis for K8s cluster insights​
+linkedin.com
+​
+linkedin.com
+.
+Spacelift Blog – How to Restart Kubernetes Pods: Confirms that deleting a pod will cause Kubernetes to recreate it, effectively “restarting” the pod​
+spacelift.io
+. This is the method our agent uses for automated pod restarts.
+
+
+
+
+Sources
+You said:
+I have a genai internal platform where gemini models and llama models can be accessible. 
+ChatGPT said:
+Updated saved memory
+Perfect. Since your internal GenAI platform provides access to Gemini and LLaMA models, I’ll tailor the health check agent to support these models natively via your internal APIs—bypassing the need for OpenAI or external endpoints.
+
+Next, I’ll deliver:
+
+A Python-based agent fully integrated with your GenAI platform.
+Support for Gemini and LLaMA model selection.
+Prompt design optimized for Kubernetes observability signals.
+Action scripts for automated pod restarts.
+Full deployment package (Dockerfile, Kubernetes manifests, and config).
+Expect the implementation shortly! Would you also like Slack or ServiceNow integration for notifications when an action is triggered?
+
+You said:
+Action scripts are not needed.  Ignore this logic as of now. We are monitoring k8s platform and windows and linux on Prem platform 
+ChatGPT said:
+Updated saved memory
+Got it. I’ll now focus the solution on:
+
+Observability signal analysis (Prometheus metrics, optionally logs/traces)
+Generating GenAI-based health summaries using Gemini or LLaMA
+Supporting both Kubernetes and on-prem Windows/Linux platforms
+No automated action execution (purely diagnostic and insight generation)
+Next, I’ll finalize and deliver the full implementation code and deployment-ready setup tailored for this use case. Let me know if you want this integrated with an existing dashboard like Grafana or exposed via an internal API.
+
+You said:
+Internal api
+ChatGPT said:
+Perfect. I’ll include a lightweight internal API (using FastAPI in Python) to expose the GenAI-powered health check agent. It will support:
+
+/health-summary — triggers real-time Prometheus metric queries across K8s, Windows, and Linux platforms
+Passes the data to your internal Gemini or LLaMA model
+Returns natural-language health insights via a JSON response
+(Optional) future endpoints like /upload-logs, /trend-analysis
+You’ll get:
+
+Python source with FastAPI
+Prometheus client module (multi-platform aware)
+Gemini/LLaMA API integration template
+Dockerfile and Kubernetes manifests for deployment
+I’ll prepare and share the full package shortly! Let me know if you'd like token-based auth on the API.
+
+You said:
+Can we make use of MCP and Langgraph 
+ChatGPT said:
+Absolutely — you can build a robust and intelligent health check agent by combining:
+
+1. MCP (Model Context Protocol)
+Acts as a context management layer, structuring the prompts and responses across multiple observability domains (K8s, Linux, Windows).
+Maintains conversation state or incident memory, so the model knows past health trends, previously analyzed issues, or component relationships.
+Useful for multi-turn queries or contextual root cause diagnostics.
+2. LangGraph
+Provides a graph-based orchestration layer over multiple AI tools or decision steps.
+You can define nodes for:
+Prometheus data fetch
+Platform classifier (e.g., “Is this K8s, Linux or Windows?”)
+Gemini/LLaMA model interaction
+Memory enrichment via MCP
+Enables flexible branching logic like:
+If Linux, query disk I/O metrics and analyze.
+If K8s, fetch pod readiness and CPU usage.
+Architecture Update with MCP + LangGraph
+[FastAPI Endpoint]
+      |
+      v
+[LangGraph Root Node]
+      |
+      +--> [Fetch Metrics Node (Prometheus)]
+      |
+      +--> [Context Memory Node (MCP)]
+      |
+      +--> [Platform Routing Node]
+              |
+              +--> [LLM Node - Gemini or LLaMA]
+                      |
+                      v
+        [Return Summary to FastAPI as JSON]
+Advantages
+LangGraph gives clear modularity and orchestration across multiple platforms.
+MCP ensures cross-step context sharing — for example, storing:
+Last seen pod status
+Typical CPU baseline per Windows server
+Previously auto-resolved anomalies
+Next Steps
+I’ll design:
+
+LangGraph-based orchestration script (Python)
+MCP context manager (lightweight cache or Redis-based)
+Integration with Prometheus for all 3 platforms
+Gemini/LLaMA model connector
+FastAPI server for /health-summary
+Would you like the health summaries to be structured (JSON with sections) or natural-language only?
+
+You said:
+Both
+ChatGPT said:
+Perfect. I’ll configure the agent to return both formats from the /health-summary endpoint:
+
+1. Natural Language Summary
+Generated by Gemini or LLaMA via LangGraph, e.g.:
+
+“The Kubernetes cluster appears healthy overall. However, pod payment-api-123 restarted 5 times in the last 10 minutes. CPU usage on Windows node win-node-01 is above 85%, which might indicate a CPU saturation risk.”
+2. Structured JSON
+Returned alongside the text:
+
+{
+  "summary": "The Kubernetes cluster appears healthy overall...",
+  "status": "degraded",
+  "issues": [
+    {
+      "platform": "kubernetes",
+      "component": "payment-api-123",
+      "issue": "High pod restart count",
+      "severity": "medium"
+    },
+    {
+      "platform": "windows",
+      "component": "win-node-01",
+      "issue": "CPU usage above threshold (85%)",
+      "severity": "high"
+    }
+  ],
+  "recommendations": [
+    "Investigate restart loop in payment-api-123",
+    "Check running processes on win-node-01"
+  ]
+}
+Coming up: Full code in Python with:
+
+FastAPI endpoint /health-summary
+LangGraph flow for platform-aware orchestration
+MCP layer for memory/context
+Prometheus metric ingestion (K8s, Windows, Linux)
+Gemini/LLaMA integration (your internal APIs)
+Dockerfile + K8s manifests
+Let me know if you want:
+
+Pagination or streaming responses
+LDAP/auth token check on the endpoint
+Integration with any dashboard or chat interface (Slack/MS Teams)
+You said:
+Can this be integrated into AIME Chatbot or teams 
+ChatGPT said:
+Yes, absolutely — the GenAI Health Check Agent you're building can be integrated with both AIME Chatbot and Microsoft Teams, making it accessible for SREs, Platform teams, and Support engineers via chat.
+
+Here’s how integration works for each:
+
+1. AIME Chatbot Integration (Internal Platform Bot)
+Assuming AIME is your internal enterprise chatbot platform:
+
+API Integration: The FastAPI backend exposes /health-summary and other endpoints. AIME can call these endpoints based on user input like:
+"How is the Windows infra health?"
+"Show me pod-level issues in K8s"
+Dynamic Prompting: You can configure AIME to forward the question to the health agent, and embed the response (natural language + JSON) back into the chat.
+Session Memory with MCP: If AIME supports context memory or connects to LangGraph’s memory layer, you can make this a multi-turn conversation, e.g.:
+"Show me issues on node-1"
+"Restart the pod if it’s crashing" (even though action scripts are disabled now)
+Custom Skills/Tools: If AIME supports skill/plugin architecture, the agent can be wrapped as a “Health Check” skill.
+2. Microsoft Teams Integration
+You can make use of:
+
+Teams Bot Framework or Power Virtual Agents
+Incoming Webhooks or Bot messaging endpoints
+Options:
+
+Proactive Notifications: Use a webhook to post GenAI summary into a channel like #platform-health after every 5-minute run.
+Interactive Chatbot:
+User sends: “Status of Kubernetes cluster?”
+Teams bot invokes the internal API /health-summary
+Response comes back with natural language + JSON (rendered as a card)
+Adaptive Cards: Teams supports JSON-based adaptive cards. You can:
+Parse the structured response.
+Present a card with colored severity tags, platform info, and action buttons (disabled for now).
+Architecture Suggestion
+[User in Teams or AIME]
+        |
+      [Chatbot Layer]
+        |
+[FastAPI Internal Endpoint (LangGraph + MCP)]
+        |
+  [Gemini/LLaMA | Prometheus | Platform Logic]
+Next Steps
+I’ll:
+
+Add a /chat-hook endpoint that accepts chat-based queries.
+Format the output for:
+AIME simple text + JSON
+Teams adaptive card (optional template)
+Provide a reference webhook payload or message formatting code.
+Would you prefer Teams interactive chatbot or just push-based summaries for now? And should AIME respond with full summary or just top issues?
+
+You said:
+Ignore AIME and chatbot now. 
+ChatGPT said:
+Updated saved memory
+Got it — we’ll focus purely on the internal API-based GenAI health check agent using LangGraph and MCP, with structured + natural language output for Kubernetes, Windows, and Linux observability data.
+
+I’ll proceed with building and packaging that for you. Let me know if you’d like support for scheduled summaries (e.g. every 5 min) or strictly on-demand API calls only.
+
+You said:
+Scheduled summaries and on demand api calls aswell 
+ChatGPT said:
+Updated saved memory
+Perfect — I’ll implement both:
+
+Scheduled Summaries: Runs every N minutes (default 5), analyzes metrics, logs the summary, and stores results (optionally emit to a file or internal endpoint).
+On-Demand API Calls: /health-summary endpoint for real-time analysis via FastAPI.
+Next up: full Python implementation with LangGraph, MCP, Prometheus integration, Gemini/LLaMA support, and deployment manifests. Let me know if you want summaries to be stored to a database or just retained in memory/logs.
+
+You said:
+Retained in memory logs. Need a detailed project with all the code. And also need a crisp documentation to showcase to management. 
+ChatGPT said:
+Updated saved memory
+Perfect — I’ll deliver:
+
+A complete Python project using FastAPI, LangGraph, and MCP
+Integration with Prometheus for multi-platform (K8s, Windows, Linux)
+Gemini/LLaMA support using your internal GenAI platform
+Scheduled & on-demand health summaries
+Memory-based logging of insights (no external DB)
+Crisp, polished documentation suitable for presenting to leadership (including architecture, key features, value, and sample outputs)
+I’ll get everything prepared — code, config, and docs — and share it in the next steps. Let me know if you’d also like a PowerPoint summary slide to accompany the documentation.
+
+You said:
+PowerPoint also needed. Added advantage 
+ChatGPT said:
+Updated saved memory
+Perfect — I’ll include an executive-style PowerPoint slide that highlights:
+
+Project purpose and architecture
+Key features (GenAI, LangGraph, MCP, Prometheus integration)
+Benefits to observability and operations
+Sample output and business impact
+You’ll get:
+
+Full Python codebase
+Deployment-ready YAMLs
+Crisp documentation (Markdown & PPT)
+Summary logs retained in memory
+I’ll start putting this together for you now.
+
+You said:
+Thanks. Please go ahead 
+ChatGPT said:
+You're welcome! I’m on it — packaging the complete GenAI Health Check Agent solution with:
+
+Python-based agent (LangGraph + MCP + Prometheus integration)
+Gemini/LLaMA model connectivity
+FastAPI endpoints for on-demand health checks
+Scheduled job logic for periodic summaries
+In-memory log retention
+Clean architecture and code
+Polished Markdown + PowerPoint summary for leadership
+I’ll share the full project shortly, broken down into:
+
+Source code and structure
+Configuration and deployment steps
+Example logs and outputs
+Management-facing documentation and slide
+Stay tuned — delivery coming up.
+
+You said:
+Please go ahead and create the complete details. 
+ChatGPT said:
+To tailor the implementation correctly, could you please confirm:
+
+Do you have a preferred scheduling method for the summaries? (e.g., use APScheduler, Celery, or simple Python loop with time.sleep())
+Should the FastAPI app expose only internal endpoints, or do you want Swagger UI for testing as well?
+Would you like the in-memory summaries to persist across restarts (e.g., via file cache), or only in the current runtime session?
+Once you confirm, I’ll build the full codebase and documentation package.
+
+You said:
+Use celery for schedule method. Both endpoints 
+ChatGPT said:
+Thanks for confirming. I’ll now create the full Python project for the GenAI-based health check agent using LangGraph and MCP. It will support:
+
+Prometheus integration across Kubernetes, Windows, and Linux platforms
+GenAI model access (Gemini and LLaMA via internal APIs)
+LangGraph for orchestration and MCP for memory/context
+FastAPI server with both:
+Scheduled health summaries using Celery
+On-demand /health-summary endpoint with Swagger UI
+In-memory log retention (no DB)
+Full codebase, deployment manifests, and crisp documentation including a PowerPoint summary slide
+I’ll let you know once it’s ready for review.
+
+Research completed in 14m · 12 sources
+GenAI Health Check Agent – Complete Solution
+
+Overview
+
+This solution implements a Python-based GenAI health check agent that monitors system health across Kubernetes clusters, Windows servers, and Linux servers. It collects metrics from Prometheus, uses a LangGraph-orchestrated workflow to analyze those metrics with a Generative AI model (e.g. Google Gemini or LLaMA via internal API), and produces both human-friendly summaries and machine-readable results. The agent retains recent health check summaries in memory (using the Model Context Protocol (MCP) concept for context), enabling it to provide trend-aware insights. An HTTP API (FastAPI) is provided for on-demand health summaries (with Swagger UI), and a Celery scheduler triggers periodic checks (every 5 minutes by default). All components are containerized with a Dockerfile and ready for deployment on Kubernetes with the provided manifests.
+Architecture and Components
+
+LangGraph Orchestration Workflow
+The agent’s internal logic is structured as a LangGraph workflow that breaks down the health check into discrete steps (nodes) for clarity and control. The workflow includes:
+Platform Detection Node: Determines if the runtime environment is Kubernetes, Windows, or Linux.
+Metrics Collection Node: Fetches relevant Prometheus metrics based on the platform.
+Context Gathering Node: Retrieves recent health summaries from in-memory history (using an MCP-like context fetch).
+GenAI Analysis Node: Prepares a prompt with the metrics and context, and calls a Generative AI model (Gemini/LLaMA) via an internal API to analyze system health.
+Response Parsing Node: Parses the AI model’s output into a structured summary and JSON result.
+Using LangGraph ensures a modular, controllable pipeline (a graph of nodes) rather than a monolithic script. Each step’s state is preserved and passed along, and the flow could be extended (e.g., conditional branches or human-in-loop steps) if needed​
+qodo.ai
+​
+qodo.ai
+. State management is handled by LangGraph under the hood, requiring only a session ID to maintain continuity across nodes​
+qodo.ai
+.
+Model Context Protocol (MCP) for Context Retention
+The agent employs the Model Context Protocol (MCP) concept to provide the AI model with runtime context from external sources​
+gyliu513.medium.com
+​
+gyliu513.medium.com
+. In our case, the “external source” is the agent’s own memory of recent health checks. After each run, a summary is stored in an in-memory log. The next health check will retrieve this summary and include it in the prompt, giving the AI model historical context (trends, recent issues, etc.). This MCP-like memory injection decouples data retrieval from the model logic and makes the AI analysis more context-aware and continuous. (For simplicity, we simulate MCP by using a shared in-memory store – Redis – rather than a full MCP server, but the pattern aligns with MCP’s goal of seamlessly plugging in external context.)
+Prometheus Metrics Collection
+The agent collects monitoring metrics from Prometheus to evaluate system health. It automatically adjusts the queries based on platform:
+Kubernetes/Linux: uses Node Exporter metrics (e.g., CPU usage from node_cpu_seconds_total, memory usage from node_memory_*).
+Windows: uses Windows Exporter metrics (e.g., CPU usage from windows_cpu_time_total, memory from windows_memory_*).
+It queries Prometheus’s HTTP API for key metrics such as CPU utilization (%), memory utilization (%), and (if in a Kubernetes environment) the count of any non-ready nodes. These metrics are aggregated or averaged across the system to provide a high-level picture. For example, CPU usage is derived by subtracting idle time from 100%​
+reddit.com
+, and memory usage is computed from available vs total memory. The metrics collection component is designed to be extensible – additional PromQL queries can be added for more insights (disk usage, network, pod counts, etc.).
+GenAI (Gemini/LLaMA) Analysis via Internal API
+At the core of the solution is the Generative AI analysis. The agent uses a large language model (LLM) (such as Google’s Gemini or Meta’s LLaMA) to interpret metrics and generate a health report. The model is accessed through an internal API (this could be an endpoint for a hosted model or a local inference server). The prompt sent to the model includes:
+The platform and collected metrics (formatted for clarity).
+The recent context (previous summary) if available, to inform the model of prior state.
+An instruction to identify anomalies or issues, provide a brief summary for an IT admin, and also output a structured JSON representation of the analysis.
+By instructing the LLM to output both a natural-language summary and a JSON structure, we harness its capabilities for complex reasoning while ensuring we get structured data for programmatic use. The LLM might say, for example, “All systems nominal. CPU at 45%, memory at 70%, no failing nodes.” and simultaneously produce a JSON like {"overall_status": "healthy", "issues": [], "cpu_percent": 45, "memory_percent": 70}. The agent uses the model’s response to derive the final outputs.
+Note: In this implementation, the LLM call is abstracted. In a real deployment, you would integrate the actual model API (e.g., Google Vertex AI for Gemini​
+cloud.google.com
+ or a REST endpoint for a LLaMA-based service). The code is structured to easily plug in the model of choice. The MCP approach ensures that adding or changing data sources (like incorporating an external incident DB or logs) would simply involve adding another resource tool, without altering core logic.
+FastAPI Service and API Endpoint
+A lightweight FastAPI web server provides an HTTP interface for on-demand health checks:
+GET /health-summary: Triggers an immediate health check and returns the results in JSON format. The response contains both the human-readable summary and the structured data ({"summary": "...", "details": {...}}). This design allows integration into dashboards or other services easily.
+Swagger UI: FastAPI’s interactive docs are enabled at /docs, so users can explore and test the API (e.g., triggering health checks manually and examining the output format). This is useful for validation and demo purposes.
+The FastAPI app is configured to serialize Pydantic models for clarity in the docs. It is also possible to extend the API with additional endpoints (for example, to retrieve the historical log or specific metrics) as needed.
+Celery Scheduler for Periodic Checks
+In addition to on-demand checks, the agent performs scheduled health summaries every 5 minutes by default (configurable). This is handled by Celery, a distributed task queue:
+A Celery beat scheduler is configured to enqueue the health check task periodically.
+A Celery worker process runs the health_check_task, which internally calls the same LangGraph/LLM pipeline as the on-demand check.
+Results from scheduled checks are stored in memory (and can be logged or monitored).
+Using Celery allows the heavy lifting (metrics queries and LLM processing) to occur asynchronously in the background, so the FastAPI server remains responsive. The schedule ensures proactive monitoring – issues can be caught even if no one manually calls the API. In a production setup, you might hook these periodic results into an alerting system (e.g., if the structured JSON indicates an anomaly, trigger an alert).
+In-Memory Summary Log (Runtime Memory)
+All health check results (both scheduled and on-demand) are kept in an in-memory history log. This is simply a Python list (or a Redis list in this implementation for cross-process sharing) that stores the most recent N summaries (with N configurable, e.g., 20). This log serves two purposes:
+Context for AI (MCP): When generating a new summary, the last entry from this log is fetched and included in the prompt (as described earlier), enabling the AI to be aware of recent system states/trends.
+Quick Reference: The log allows the system (or developers) to quickly retrieve recent health check outputs. While no API endpoint explicitly exposes the full history in this solution (to keep things simple), it’s straightforward to add one. Because the storage is in-memory and not persisted to a database, it resets on restart – this is by design, as per requirements (no long-term storage). In a real scenario, if persistence is needed, one could easily integrate a small database or file write here.
+The memory log is maintained in a thread-safe manner. When the Celery task produces a new summary, it pushes it into the log (trimming the oldest if necessary). The FastAPI endpoint, when invoked, also pushes the freshly computed result to the log. By avoiding external databases, the system remains lightweight; using Redis (already used as the Celery broker) for the log means even the web and worker processes can share context without complex synchronization.
+Implementation Details
+
+Below, we provide the complete implementation including code, configuration, and deployment artifacts. The code is written with modularity and clarity in mind, following production-ready practices:
+Configuration (URLs, intervals, etc.) is centralized.
+The LangGraph workflow encapsulates the AI reasoning pipeline.
+The Prometheus query logic is abstracted for easy adjustments.
+The Celery tasks and FastAPI app are decoupled but share common logic through a utility module.
+Both natural language output and structured JSON are returned consistently.
+Code Structure and Modules
+The solution is organized into a few Python modules:
+config.py: Defines configuration constants (endpoints, intervals, etc.).
+healthcheck_engine.py: Core logic – platform detection, metric queries, context retrieval, prompt building, LLM invocation, and response parsing. It also defines the LangGraph workflow (nodes and state) and provides a perform_health_check() function that executes the end-to-end check.
+tasks.py: Sets up Celery (broker config and periodic schedule) and defines the scheduled health check task that uses the engine. This module is run by Celery workers/beat.
+main.py: Sets up the FastAPI application and the /health-summary endpoint, using the engine to perform checks on-demand. This is the entry point for the web service.
+Each piece is explained and then the full code is provided. After code, we include the Dockerfile, requirements.txt, and Kubernetes manifests.
+config.py
+
+This module centralizes configuration, including Prometheus and model API endpoints, Celery broker URLs, and scheduling intervals. Environment variables can override defaults for flexibility.
+```python
+# config.py
+import os
+
+# Prometheus base URL (for API queries)
+PROM_URL = os.getenv("PROM_URL", "http://localhost:9090")
+
+# Internal GenAI model API (placeholder URL)
+MODEL_API_URL = os.getenv("MODEL_API_URL", "http://internal-genai:8000/api/v1/generate")
+MODEL_TYPE = os.getenv("MODEL_TYPE", "LLaMA")  # e.g., "Gemini" or "LLaMA" (for informational use)
+
+# Celery broker (and using Redis also for log storage)
+BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
+# Use a separate Redis DB (1) for storing health summaries (to avoid clashing with Celery's own keys)
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/1")
+
+# Health check schedule interval (in seconds) for Celery beat
+SCHEDULE_INTERVAL = int(os.getenv("HEALTH_CHECK_INTERVAL_SEC", "300"))  # default 5 minutes
+
+# How many past health summaries to retain in memory
+HISTORY_SIZE = int(os.getenv("HISTORY_SIZE", "20"))
+```python
+healthcheck_engine.py
+
+This module implements the core health check logic. It uses LangGraph to define a workflow of five nodes (platform detection, metrics fetch, context gather, model call, and output parsing). The perform_health_check() function compiles and runs the LangGraph, returning a summary and structured result. If no actual model API is configured, it falls back to a simple rule-based analysis (so the system can still function in a basic way). In a real deployment, you would ensure MODEL_API_URL is set to a working AI service.
+```python
+# healthcheck_engine.py
+import os, platform, json
+import requests
+import redis
+from datetime import datetime
+from typing import Any, Dict
+from typing_extensions import TypedDict
+
+# Import configuration
+import config
+
+# LangGraph for orchestrating the workflow
+from langgraph.graph import StateGraph, END
+
+# Define the state schema for LangGraph
+class HealthState(TypedDict):
+    platform: str           # "Kubernetes", "Windows", or "Linux"
+    metrics: Dict[str, Any] # Collected metrics (e.g., {"cpu_percent": 42, ...})
+    context: str            # Recent summary from history (for context)
+    analysis_text: str      # Raw output from the GenAI model (text including summary and JSON)
+    summary: str            # Final natural language summary
+    structured: Dict[str, Any]  # Final structured analysis (JSON data)
+
+# Setup a Redis client for storing/retrieving the history log (for context)
+redis_client = redis.Redis.from_url(config.REDIS_URL, decode_responses=True)
+
+# 1. Platform Detection Node
+def detect_platform_node(state: HealthState) -> Dict[str, str]:
+    """Detects the current platform (Kubernetes, Windows, or Linux)."""
+    # Check Kubernetes first (presence of Kubernetes service environment variable)
+    if os.getenv("KUBERNETES_SERVICE_HOST"):
+        platform_name = "Kubernetes"
+    else:
+        # Use Python platform module for OS detection
+        os_system = platform.system()
+        if os_system.startswith("Win"):
+            platform_name = "Windows"
+        else:
+            platform_name = "Linux"
+    return {"platform": platform_name}
+
+# 2. Metrics Collection Node
+def get_metrics_node(state: HealthState) -> Dict[str, Any]:
+    """Fetches key metrics from Prometheus based on the detected platform."""
+    plat = state.get("platform", "")
+    metrics = {}
+    # Prepare PromQL queries depending on platform
+    try:
+        if plat == "Kubernetes" or plat == "Linux":
+            # CPU usage (% of total across all cores)
+            cpu_query = '100 - (avg without(mode)(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)'
+            # Memory usage (% used)
+            mem_query = '(1 - (avg(node_memory_MemAvailable_bytes) / avg(node_memory_MemTotal_bytes))) * 100'
+            # Nodes not ready (if Kubernetes)
+            not_ready_query = 'sum(kube_node_status_condition{condition="Ready", status="false"})'
+            # Query Prometheus
+            cpu = query_prometheus(cpu_query)
+            mem = query_prometheus(mem_query)
+            metrics["cpu_percent"] = round(cpu, 1) if cpu is not None else None
+            metrics["memory_percent"] = round(mem, 1) if mem is not None else None
+            if plat == "Kubernetes":
+                not_ready = query_prometheus(not_ready_query)
+                metrics["nodes_not_ready"] = int(not_ready) if not_ready is not None else 0
+        elif plat == "Windows":
+            # CPU usage for Windows (use windows_exporter metrics)
+            cpu_query = '100 - (avg without(mode,core)(rate(windows_cpu_time_total{mode="idle"}[5m])) * 100)'
+            # Memory usage for Windows
+            mem_query = '(1 - (avg(windows_memory_available_bytes) / avg(windows_memory_physical_total_bytes))) * 100'
+            cpu = query_prometheus(cpu_query)
+            mem = query_prometheus(mem_query)
+            metrics["cpu_percent"] = round(cpu, 1) if cpu is not None else None
+            metrics["memory_percent"] = round(mem, 1) if mem is not None else None
+        else:
+            # Unknown platform case (should not happen), leave metrics empty
+            pass
+    except Exception as e:
+        # If any query fails, we can leave metrics incomplete or add an error flag
+        metrics["error"] = str(e)
+    return {"metrics": metrics}
+
+# Helper function to query Prometheus API
+def query_prometheus(query: str) -> float:
+    """Query Prometheus and return the first numeric value result (as float)."""
+    url = config.PROM_URL.rstrip('/') + "/api/v1/query"
+    try:
+        resp = requests.get(url, params={"query": query}, timeout=5)
+        data = resp.json()
+        if data.get("status") == "success":
+            result = data.get("data", {}).get("result", [])
+            if result:
+                # Each result has 'value': [timestamp, value] or 'values' for range queries
+                value = result[0].get("value") or result[0].get("values")
+                if value:
+                    # value could be a list [timestamp, val] or list of such lists
+                    val_str = value[-1] if isinstance(value, list) else value
+                    return float(val_str)
+        # In case of failure or no data, return None
+    except Exception:
+        pass
+    return None
+
+# 3. Context Gathering Node
+def gather_context_node(state: HealthState) -> Dict[str, str]:
+    """Retrieves the most recent health summary from the in-memory history (if any)."""
+    recent_summary = ""
+    try:
+        # Get the latest entry from the Redis list (index 0 is most recent)
+        latest = redis_client.lindex("health_summaries", 0)
+        if latest:
+            latest_entry = json.loads(latest)
+            recent_summary = latest_entry.get("summary", "")
+    except Exception:
+        recent_summary = ""
+    return {"context": recent_summary or ""}
+
+# 4. GenAI Model Call Node
+def call_model_node(state: HealthState) -> Dict[str, str]:
+    """Calls the Generative AI model API with a crafted prompt and returns the raw analysis text."""
+    platform_name = state.get("platform", "")
+    metrics = state.get("metrics", {})
+    context = state.get("context", "")
+    # Construct the prompt for the AI model
+    prompt = build_prompt(platform_name, metrics, context)
+    analysis_text = ""
+    if config.MODEL_API_URL:
+        # Call the external GenAI model API
+        try:
+            response = requests.post(config.MODEL_API_URL, json={"prompt": prompt}, timeout=15)
+            # Assuming the API returns a JSON with a 'result' or 'text' field containing the model's answer
+            result_json = response.json()
+            analysis_text = result_json.get("result") or result_json.get("text") or response.text
+        except Exception as e:
+            analysis_text = f"Model API call failed: {e}"
+    else:
+        # Fallback logic if no model API is configured (simple heuristic analysis)
+        analysis_text = simple_rule_based_analysis(platform_name, metrics, context)
+    return {"analysis_text": analysis_text}
+
+def build_prompt(platform_name: str, metrics: Dict[str, Any], context: str) -> str:
+    """Builds a prompt string for the AI model incorporating platform, metrics, and context."""
+    lines = []
+    lines.append(f"Platform: {platform_name}")
+    lines.append(f"Metrics:")
+    for k, v in metrics.items():
+        lines.append(f"- {k}: {v}")
+    if context:
+        lines.append(f"Previous Summary: {context}")
+    # Instruction for the AI
+    lines.append("Analyze the system health based on the above metrics.")
+    lines.append("Identify any anomalies or critical issues.")
+    lines.append("Provide a brief summary for an IT admin.")
+    lines.append("Also, output a JSON with your findings (overall status, any issues, key metrics) in a Markdown ```json code block.")
+    return "\n".join(lines)
+
+def simple_rule_based_analysis(platform_name: str, metrics: Dict[str, Any], context: str) -> str:
+    """Generate a simple analysis text without using an AI model (for fallback purposes)."""
+    cpu = metrics.get("cpu_percent")
+    mem = metrics.get("memory_percent")
+    issues = []
+    status = "healthy"
+    summary_lines = []
+    # Basic rule-based checks
+    if cpu is not None and cpu > 85:
+        issues.append(f"High CPU usage ({cpu}%)")
+        status = "degraded"
+    if mem is not None and mem > 90:
+        issues.append(f"High memory usage ({mem}%)")
+        status = "degraded"
+    if metrics.get("nodes_not_ready", 0) > 0:
+        count = metrics["nodes_not_ready"]
+        issues.append(f"{count} node(s) not Ready")
+        status = "critical" if count > 0 else status
+    # Construct summary text
+    if issues:
+        summary_lines.append("Issues detected: " + ", ".join(issues) + ".")
+    else:
+        summary_lines.append("No major issues detected.")
+    if cpu is not None:
+        summary_lines.append(f"CPU at {cpu}%")
+    if mem is not None:
+        summary_lines.append(f"Memory at {mem}%")
+    summary_lines.append(f"Platform: {platform_name}.")
+    # Combine summary
+    summary_text = " ".join(summary_lines)
+    # Create a structured JSON string for the analysis
+    structured = {
+        "overall_status": "critical" if status == "critical" else ("degraded" if status == "degraded" else "healthy"),
+        "issues": issues,
+        "cpu_percent": cpu,
+        "memory_percent": mem
+    }
+    if platform_name == "Kubernetes" and "nodes_not_ready" in metrics:
+        structured["nodes_not_ready"] = metrics["nodes_not_ready"]
+    # Embed JSON in a markdown code block
+    analysis_text = f"{summary_text}\n```json\n{json.dumps(structured)}\n```"
+    return analysis_text
+
+# 5. Response Parsing Node
+def parse_output_node(state: HealthState) -> Dict[str, Any]:
+    """Parses the AI model's raw output to separate summary and structured JSON data."""
+    text = state.get("analysis_text", "") or ""
+    summary = ""
+    structured = {}
+    # Look for a JSON code block in the text
+    if "```json" in text:
+        # Split at the JSON code block
+        parts = text.split("```json")
+        summary_part = parts[0].strip()
+        summary = summary_part if summary_part else ""
+        # Extract JSON content inside the code block (up to closing ``` or end of text)
+        json_part = parts[1].split("```")[0] if len(parts) > 1 else parts[1]
+        try:
+            structured = json.loads(json_part)
+        except Exception:
+            structured = {}
+    else:
+        summary = text.strip()
+        structured = {}
+    # Clean up summary (remove any trailing "Summary:" if present)
+    if summary.lower().startswith("summary:"):
+        summary = summary[len("summary:"):].strip()
+    return {"summary": summary, "structured": structured}
+
+# Build the LangGraph workflow with defined nodes
+graph_builder = StateGraph(HealthState)
+# Add nodes to the graph
+graph_builder.add_node("detect_platform", detect_platform_node)
+graph_builder.set_entry_point("detect_platform")
+graph_builder.add_node("get_metrics", get_metrics_node)
+graph_builder.add_edge("detect_platform", "get_metrics")
+graph_builder.add_node("gather_context", gather_context_node)
+graph_builder.add_edge("get_metrics", "gather_context")
+graph_builder.add_node("call_model", call_model_node)
+graph_builder.add_edge("gather_context", "call_model")
+graph_builder.add_node("parse_output", parse_output_node)
+graph_builder.add_edge("call_model", "parse_output")
+graph_builder.add_edge("parse_output", END)
+# Compile the workflow to a callable object
+workflow = graph_builder.compile()
+
+def perform_health_check() -> (str, Dict[str, Any]):
+    """Orchestrates a full health check using the LangGraph workflow. Returns (summary, structured_data)."""
+    # Initial state (empty values for all keys)
+    initial_state: HealthState = {
+        "platform": "",
+        "metrics": {},
+        "context": "",
+        "analysis_text": "",
+        "summary": "",
+        "structured": {}
+    }
+    # Execute the workflow
+    final_state: HealthState = workflow(initial_state)
+    summary_text = final_state.get("summary", "")
+    structured_data = final_state.get("structured", {})
+    # (Optional) Add platform info to structured data for completeness
+    if "platform" in final_state:
+        structured_data["platform"] = final_state["platform"]
+    return summary_text, structured_data
+```python
+tasks.py
+
+This module sets up the Celery app, including the broker configuration and the periodic task schedule, and defines the scheduled health check task. The task function calls perform_health_check() from the engine and then stores the result in the in-memory log (using Redis) and returns it. We use a Redis list named "health_summaries" for the history.
+```python
+# tasks.py
+from celery import Celery
+import json
+from datetime import datetime
+
+import config
+import healthcheck_engine as engine  # import the health check engine
+
+# Initialize Celery app with broker (and no result backend for simplicity)
+celery_app = Celery("health_agent", broker=config.BROKER_URL)
+celery_app.conf.timezone = "UTC"
+# Configure Celery Beat schedule for periodic health checks
+celery_app.conf.beat_schedule = {
+    "scheduled_health_check": {
+        "task": "tasks.health_check_task",
+        "schedule": config.SCHEDULE_INTERVAL  # e.g., 300 seconds
+    }
+}
+# Use Redis (same as broker but different DB) for log storage
+import redis
+redis_client = redis.Redis.from_url(config.REDIS_URL)
+
+@celery_app.task(name="tasks.health_check_task")
+def health_check_task():
+    """Periodic task to perform a health check and log the result."""
+    summary, structured = engine.perform_health_check()
+    # Prepare result object with timestamp
+    result = {
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "platform": structured.get("platform", ""),
+        "summary": summary,
+        "details": structured
+    }
+    # Store in the in-memory history (Redis list)
+    try:
+        redis_client.lpush("health_summaries", json.dumps(result))
+        redis_client.ltrim("health_summaries", 0, config.HISTORY_SIZE - 1)
+    except Exception as e:
+        print(f"[Warning] Failed to store result in history: {e}")
+    return result
+```python
+main.py (FastAPI app)
+
+This module creates the FastAPI application and defines the API endpoint. The /health-summary GET endpoint will trigger a new health check on each request (by calling the same perform_health_check function), then return the results. It also appends the new result to the history log. We define a Pydantic response model for clarity in documentation.
+```python
+# main.py
+from fastapi import FastAPI
+from pydantic import BaseModel
+import json
+
+import healthcheck_engine as engine
+import config
+import redis
+
+# Pydantic model for the response (summary and details)
+class HealthSummaryResponse(BaseModel):
+    summary: str
+    details: dict
+
+app = FastAPI(title="GenAI Health Check Agent", description="GenAI-powered system health monitoring API", version="1.0.0")
+
+# Initialize Redis client for logging (same as in engine and tasks)
+redis_client = redis.Redis.from_url(config.REDIS_URL, decode_responses=True)
+
+@app.get("/health-summary", response_model=HealthSummaryResponse)
+def get_health_summary():
+    """
+    Perform an on-demand health check and return a summary of system health.
+    The response includes a natural language summary and a structured JSON analysis.
+    """
+    # Run the health check pipeline
+    summary, structured = engine.perform_health_check()
+    # Store the result in history log (like the scheduled task does)
+    result = {
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "platform": structured.get("platform", ""),
+        "summary": summary,
+        "details": structured
+    }
+    try:
+        redis_client.lpush("health_summaries", json.dumps(result))
+        redis_client.ltrim("health_summaries", 0, config.HISTORY_SIZE - 1)
+    except Exception as e:
+        print(f"[Warning] Could not log to history: {e}")
+    return {"summary": summary, "details": structured}
+```python
+Note: In a real deployment, ensure the MODEL_API_URL is set to a valid endpoint and that the Prometheus URL is correct for your environment. Also, consider security (authentication to the API, restricting or securing the FastAPI endpoint if needed, etc.).
+Dockerfile
+
+The Dockerfile builds the application image. It uses a Python base image, installs dependencies (from requirements.txt), copies the code, and sets up the default command. We will use Uvicorn to run the FastAPI app. For Celery, we will use the same image but override the entrypoint/command when running the worker and beat (in Kubernetes manifests, we will define separate deployments for those, using this single image).
+```dockerfile
+# Dockerfile for GenAI Health Check Agent
+FROM python:3.11-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies (if any needed, e.g., for certain libraries)
+# (For this case, none are specifically needed beyond Python)
+
+# Copy requirements and install them
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the application code
+COPY config.py healthcheck_engine.py tasks.py main.py ./
+
+# Expose port 80 for the FastAPI app
+EXPOSE 80
+
+# Default command to run the FastAPI server
+# We use Uvicorn to serve the app on port 80
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "80"]
+```dockerfile
+Note: This Docker image contains everything needed for both the API and Celery tasks. The FastAPI app will run with the default CMD. For running Celery, one would override the command, for example:
+Celery worker: celery -A tasks.celery_app worker --loglevel=info
+Celery beat: celery -A tasks.celery_app beat --loglevel=info
+These are configured in the Kubernetes manifests below.
+Kubernetes Manifests
+
+Below are Kubernetes YAML manifests to deploy the agent. We include:
+A Deployment for the FastAPI web service.
+A Deployment for the Celery worker.
+A Deployment for the Celery beat scheduler.
+A Service to expose the FastAPI deployment internally (ClusterIP service).
+(Optionally) a Deployment for a Redis instance (as broker and context store) if one is not already available.
+You may need to adjust image names, resource requests, or other metadata according to your environment (especially the container image reference).
+Deployment – FastAPI (Web App)
+
+This deployment runs the FastAPI application (using Uvicorn as per the Docker CMD). It should be scaled to 1 or a few replicas depending on load. The environment variables configure the Prometheus URL and (if needed) the model API endpoint. It assumes a Service named prometheus is accessible (or adjust PROM_URL). It also assumes a Redis service (we use redis:6379 in the URL).
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: health-agent-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: health-agent-api
+  template:
+    metadata:
+      labels:
+        app: health-agent-api
+    spec:
+      containers:
+      - name: health-api
+        image: health-check-agent:latest  # replace with actual image name/tag
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 80
+        env:
+        - name: PROM_URL
+          value: "http://prometheus:9090"         # URL of Prometheus server
+        - name: MODEL_API_URL
+          value: "http://genai-model:8000/api/v1/generate"   # (Optional) internal URL for GenAI model
+        - name: MODEL_TYPE
+          value: "Gemini"                         # or "LLaMA", purely informational in this code
+        - name: CELERY_BROKER_URL
+          value: "redis://redis:6379/0"
+        - name: REDIS_URL
+          value: "redis://redis:6379/1"
+        - name: HISTORY_SIZE
+          value: "20"
+```yaml
+Deployment – Celery Worker
+
+This deployment runs the Celery worker process which executes the health check tasks. Multiple replicas of the worker can be run for scalability, but ensure only one beat scheduler is active (beat is separate below). The worker will consume tasks from the Redis broker.
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: health-agent-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: health-agent-worker
+  template:
+    metadata:
+      labels:
+        app: health-agent-worker
+    spec:
+      containers:
+      - name: health-worker
+        image: health-check-agent:latest
+        imagePullPolicy: IfNotPresent
+        command: ["celery", "-A", "tasks.celery_app", "worker", "--loglevel=info"]
+        env:
+        - name: PROM_URL
+          value: "http://prometheus:9090"
+        - name: MODEL_API_URL
+          value: "http://genai-model:8000/api/v1/generate"
+        - name: MODEL_TYPE
+          value: "Gemini"
+        - name: CELERY_BROKER_URL
+          value: "redis://redis:6379/0"
+        - name: REDIS_URL
+          value: "redis://redis:6379/1"
+        - name: HISTORY_SIZE
+          value: "20"
+```yaml
+Deployment – Celery Beat (Scheduler)
+
+This deployment runs Celery beat, which periodically sends the health_check_task to the queue. Only one replica of beat should run. It uses the same image and environment. The command runs Celery beat with the schedule defined in tasks.py.
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: health-agent-beat
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: health-agent-beat
+  template:
+    metadata:
+      labels:
+        app: health-agent-beat
+    spec:
+      containers:
+      - name: health-beat
+        image: health-check-agent:latest
+        imagePullPolicy: IfNotPresent
+        command: ["celery", "-A", "tasks.celery_app", "beat", "--loglevel=info"]
+        env:
+        - name: CELERY_BROKER_URL
+          value: "redis://redis:6379/0"
+        - name: REDIS_URL
+          value: "redis://redis:6379/1"
+        # (Prom URL and MODEL_API_URL not strictly needed here, since beat itself doesn't run tasks, 
+        # but it's okay to include for uniformity)
+        - name: PROM_URL
+          value: "http://prometheus:9090"
+        - name: MODEL_API_URL
+          value: "http://genai-model:8000/api/v1/generate"
+```yaml
+Deployment – Redis (Broker & Memory Store)
+
+If you do not already have a Redis service in your cluster, you can deploy one for the Celery broker and context storage. This is a simple single-instance Redis (no persistence). In production, you might use a managed Redis or a more robust configuration.
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: health-redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: health-redis
+  template:
+    metadata:
+      labels:
+        app: health-redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:7.0-alpine
+        ports:
+        - containerPort: 6379
+        # No volume for persistence (in-memory only as per requirements)
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+spec:
+  selector:
+    app: health-redis
+  ports:
+  - port: 6379
+    targetPort: 6379
+```yaml
+Service – FastAPI
+
+This Service exposes the FastAPI app within the cluster. If you want to access it externally, you could use an Ingress or NodePort as needed. For now, it's a ClusterIP service (e.g., other pods or port-forward can reach it). The service is also useful if another component (like a UI or monitoring tool) wants to call the API internally.
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: health-agent-service
+spec:
+  selector:
+    app: health-agent-api
+  ports:
+    - port: 80
+      targetPort: 80
+      protocol: TCP
+```yaml
+With these manifests, deploying the agent is as simple as applying them (kubectl apply -f <file>). Make sure to build and push the Docker image to a registry accessible by your cluster, and update the image references in the yaml accordingly.
+requirements.txt
+
+The requirements file lists all Python dependencies. Key libraries include FastAPI for the API, Uvicorn for serving, Celery for scheduling, Redis as the Celery broker, LangGraph for workflow orchestration, and requests for Prometheus API calls.
+fastapi==0.95.2
+uvicorn[standard]==0.21.1
+celery==5.3.0
+redis==4.5.5
+requests==2.31.0
+typing-extensions==4.5.0   # for TypedDict if needed
+langgraph==0.0.32
+# If integrating with actual model APIs, you might include specific SDKs (e.g., google-cloud-aiplatform for Gemini, etc.)
+```text
+(Note: Versions are examples; you may adjust to the latest stable versions. The langgraph library may internally require langchain or other packages as specified by it.)
+Usage and Deployment
+
+Deployment: After building the Docker image (e.g., docker build -t your-registry/health-check-agent:latest .), deploy the manifests. Ensure Prometheus is running and accessible at the URL you provided (in Kubernetes, you might deploy the agent in the same namespace as Prometheus or adjust network policy accordingly). If using an external GenAI model API, ensure the URL is correct and reachable from the agent pods. Running the Services:
+The FastAPI service will start and listen on port 80 of its container (the Kubernetes Service health-agent-service provides access).
+The Celery worker will connect to Redis and wait for tasks.
+The Celery beat will periodically dispatch the health_check_task every 5 minutes.
+FastAPI Endpoint: Access the Swagger UI at http://<service-address>/docs (if using port-forward, e.g., kubectl port-forward deploy/health-agent-api 8080:80, then visit http://localhost:8080/docs). There you will see the /health-summary endpoint. You can execute it from the UI or via curl:
+curl http://<service-address>/health-summary
+The response will be a JSON object. For example:
+{
+  "summary": "No major issues detected. CPU at 43.1% Memory at 70.2% Platform: Kubernetes.",
+  "details": {
+    "overall_status": "healthy",
+    "issues": [],
+    "cpu_percent": 43.1,
+    "memory_percent": 70.2,
+    "nodes_not_ready": 0,
+    "platform": "Kubernetes"
+  }
+}
+This indicates a healthy system status. If issues are detected (e.g., high usage or down nodes), the summary will mention them and the details JSON will list them under "issues" and likely mark "overall_status" as "degraded" or "critical". Memory Log: Although not exposed via API by default, the agent’s in-memory log (in Redis) keeps the last few results. This is used automatically for context. You can inspect it (e.g., by connecting to the Redis pod and using LRANGE health_summaries 0 4 to see the last 5 entries). This log resets if the agent pods restart (since it's in-memory only). Customization: You can adjust environment variables to control behavior:
+HEALTH_CHECK_INTERVAL_SEC to change the schedule frequency.
+HISTORY_SIZE to change how many summaries to retain in memory.
+PROM_URL if Prometheus is at a different address.
+MODEL_API_URL to point to your chosen GenAI model endpoint. The prompt format can also be tweaked in the code if needed to better suit the model’s style.
+If you wish to integrate additional metrics or data sources, you can extend the get_metrics_node or add new nodes (using LangGraph for complex flows if necessary). The design is modular to accommodate growth.
+Finally, ensure to monitor the logs of each component (FastAPI, Celery worker, Celery beat) to catch any connection issues or errors (e.g., inability to reach Prometheus or the model API). With everything configured, the GenAI health check agent will be continuously evaluating your system’s health and ready to provide insights on demand.
+Management Summary (PowerPoint Slide)
+
+Unified Multi-Platform Monitoring: A single GenAI-powered agent covers Kubernetes clusters, Windows servers, and Linux servers, adapting metrics collection to each environment.
+LangGraph-Orchestrated Workflow: Health checks are executed via a structured graph of steps – platform detection, metrics gathering, context injection, AI analysis, and result parsing – ensuring a controlled and extensible process.
+MCP Context Integration: Uses the Model Context Protocol concept to feed recent health summaries (runtime memory) into each new analysis, giving the AI historical context for trend-aware insights without persistent storage.
+Advanced GenAI Analysis: Leverages state-of-the-art LLMs (e.g., Google Gemini, Meta LLaMA) via internal APIs to interpret raw metrics and automatically highlight anomalies, performance issues, or failures.
+Dual-Format Results: Produces human-readable summaries for IT administrators and structured JSON outputs for programmatic consumption or alerting systems – in one API call.
+FastAPI Service with Swagger UI: Exposes a REST endpoint (/health-summary) for on-demand health reports. Includes interactive API docs for quick testing and integration into dashboards or tools.
+Proactive Health Checks: A Celery scheduler runs health checks every 5 minutes by default, so the system continuously self-monitors. Recent results are kept in-memory (no database required), enabling quick recall and context for future checks.
+Cloud-Native Deployment: Provided Dockerfile and Kubernetes manifests allow easy deployment. The solution can be scaled and managed in production environments, aligning with modern DevOps and observability practices.
+
+
+
+
+
+Sources
+You said:
+Now without celery. And also this script will be executed on vm 
+ChatGPT said:
+Updated saved memory
+Perfect — I’ll now update the project to:
+
+Remove Celery and Kubernetes dependencies
+Run as a simple Python script on a VM
+Support scheduled execution using schedule or APScheduler
+Retain in-memory health summaries (no Redis needed)
+Expose FastAPI endpoints for on-demand access
+Still use LangGraph + MCP + Prometheus + Gemini/LLaMA as before
+Next, I’ll share the full revised implementation with:
+
+Python script (standalone runnable)
+requirements.txt
+Clean documentation and a PowerPoint summary for leadership
+Coming up!
+
+You said:
+Pls go ahead 
+ChatGPT said:
+To finalize the VM-based version:
+
+Do you want to run the FastAPI server persistently in the background (like a daemon), or trigger it manually only when needed?
+For scheduled runs, would you prefer the health check output to be printed to the console, logged to a file, or both?
+Do you still want in-memory summaries retained between API and scheduled runs within the same process?
+Once confirmed, I’ll generate the complete code and documentation accordingly.
+
+You said:
+Both
+Both
+Yea
+ChatGPT said:
+Great — I’ll now create the complete Python project for a VM-executed GenAI health check agent that:
+
+Uses Prometheus to fetch metrics across Kubernetes, Windows, and Linux platforms
+Uses LangGraph + MCP-style memory to retain previous summaries
+Supports both scheduled execution and FastAPI on-demand calls
+Logs output to both the console and a file
+Runs entirely on a VM with no Celery, Redis, or Kubernetes dependencies
+I'll include full code, in-memory log retention, FastAPI interface, prompt generation, and a polished PowerPoint + Markdown doc for leadership.
+
+I'll let you know once it's ready for review.
+
+Research completed in 12m · 22 sources
+GenAI-Powered Health Check Agent
+
+This solution introduces a Python-based health check agent that runs on a single VM and uses Generative AI (GenAI) to summarize system health. It collects system metrics via Prometheus, orchestrates a multi-step workflow with LangGraph, and provides both scheduled and on-demand health summaries. Key features include:
+Cross-Platform Monitoring: Works for Kubernetes clusters, Windows servers, and Linux servers by pulling metrics from Prometheus HTTP APIs.
+GenAI Summaries: Uses a generative model (Google Gemini or Meta LLaMA via an internal API) to analyze metrics and produce a concise health report.
+Stateful Workflow: Leverages LangGraph for a controlled multi-step workflow (platform detection → metrics collection → context assembly → AI analysis → output parsing)​
+blog.langchain.dev
+, with memory of recent results.
+Periodic & On-Demand Operation: Runs automatically every 5 minutes in the background and also serves a FastAPI endpoint for on-demand health checks (with Swagger UI documentation).
+Logging & Extensibility: Logs all results to console and file, retains a short history in memory (MCP-style context), and is easily configurable via environment variables or a config file.
+Architecture and Components
+
+The agent is composed of several modular components, each encapsulated in the code for clarity and maintainability:
+Platform Detection
+Determines the environment the agent is running in (Kubernetes, Windows, or Linux). This guides which metrics to query:
+Kubernetes: Detect by environment (e.g., presence of KUBERNETES_SERVICE_HOST env var or certain file paths). If in K8s, the agent may gather cluster-level metrics (like node statuses, pod health) in addition to node metrics.
+Windows vs Linux: Use Python’s platform or os.name to distinguish. This can influence which Prometheus metrics to query (Windows exporters have different metric names).
+Implementation: A small function detect_platform() returns a string such as "k8s", "windows", or "linux" based on checks. This is the first step of the LangGraph workflow, updating the shared state with the detected platform.
+Prometheus Metrics Collection
+Once the platform is known, the agent queries a Prometheus server for relevant health metrics using PromQL queries over HTTP​
+prometheus.io
+​
+prometheus.io
+:
+Prometheus HTTP API: The agent uses requests to call the Prometheus API (e.g. GET http://<prom-host>:9090/api/v1/query?query=<PROMQL>). The result is JSON containing a data.result array of metric values​
+prometheus.io
+​
+prometheus.io
+. The agent parses these to retrieve numeric values.
+Key Metrics: It queries metrics like CPU utilization, memory usage, etc. For example:
+CPU Usage (%): Use a PromQL expression that computes CPU busy time. On Linux, this could be 100 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100 (percentage of non-idle CPU over 5 minutes). On Windows, a similar metric from the Windows exporter is used (or a precomputed CPU% if available).
+Memory Usage: Query total and available memory to compute usage (e.g., node_memory_MemTotal_bytes and node_memory_Available_bytes on Linux Node Exporter, or Windows memory metrics). Compute percentage used.
+Kubernetes-specific: If on K8s, it might also query cluster metrics (e.g., number of pods not ready, etc.) via kube-state-metrics or similar.
+Implementation: A function collect_metrics(platform) builds appropriate PromQL queries for the platform. It then performs HTTP requests (using Python’s requests library) to the Prometheus URL (configurable via env, e.g., PROM_URL). It aggregates the results into a dictionary, for example: {"cpu_percent": 45.2, "mem_percent": 70.1, "pod_count": 42}. This function is the second step in the workflow, updating the state with the metrics key.
+Workflow Orchestration with LangGraph
+LangGraph (part of LangChain) is used to orchestrate the steps of the health check in a controlled stateful manner:
+The workflow is defined as a state graph (state machine). We define a HealthState (a TypedDict) schema that the graph will maintain, including keys for platform, metrics, summary, etc.
+Nodes: Each step (platform detection, metrics collection, GenAI call, parsing) is a node in the graph. We add nodes using graph_builder.add_node(name, function) where function takes the current state and returns a state update​
+blog.langchain.dev
+. For example:
+from langgraph.graph import StateGraph, START, END
+from typing_extensions import TypedDict
+
+class HealthState(TypedDict):
+    platform: str
+    metrics: dict
+    summary: str
+    recent_summaries: list[str]  # last N summaries for context
+
+graph_builder = StateGraph(HealthState)
+
+def detect_platform_node(state: HealthState):
+    platform = detect_platform()  # calls the platform detection logic
+    return {"platform": platform}
+graph_builder.add_node("detect_platform", detect_platform_node)
+
+def collect_metrics_node(state: HealthState):
+    platform = state["platform"]
+    metrics = collect_metrics(platform)  # queries Prometheus
+    return {"metrics": metrics}
+graph_builder.add_node("collect_metrics", collect_metrics_node)
+Likewise, we add nodes for the GenAI summary and output parsing (explained below).
+Edges: We connect nodes in sequence with graph_builder.add_edge(A, B) to define execution order. We start from the special START node and end at the END:
+graph_builder.add_edge(START, "detect_platform")
+graph_builder.add_edge("detect_platform", "collect_metrics")
+graph_builder.add_edge("collect_metrics", "genai_summarize")
+graph_builder.add_edge("genai_summarize", "parse_output")
+graph_builder.add_edge("parse_output", END)
+This defines a linear flow. (LangGraph supports complex branching and loops, but here our use-case is a straight sequence.)
+Compilation: After defining nodes and edges, we compile the graph for execution:
+compiled_graph = graph_builder.compile()
+A compiled graph can be invoked with an initial state to run the workflow to completion​
+langchain-ai.github.io
+.
+Using LangGraph provides a clear structure and state handling for the agent. Each node’s function focuses on one task, and LangGraph manages passing the state along and merging updates. This also makes it easy to extend or modify steps in the future.
+Generative AI Summarization (GenAI Node)
+After collecting metrics (and any other context), the agent uses a GenAI model to interpret and summarize the health of the system:
+Context Preparation: The agent constructs a prompt or context for the model that includes the latest metrics and possibly recent history. For example, it might create a message like: "System Metrics: CPU=45%, Memory=70%, 42 pods running. Previous health summary: 'All systems nominal at last check.' Now provide an updated health summary." This prompt preparation can be done inside the GenAI node function. Alternatively, we could have a separate node to format the prompt (e.g., combining metrics and recent_summaries from state into a single string). For simplicity, we’ll do it within the GenAI node.
+Model Invocation: The agent calls an internal API to get a completion from a large language model (LLM). It supports either Google Gemini or Meta LLaMA, based on configuration. The internal API endpoint (e.g., set via MODEL_API_URL env var) will receive the prompt and return the model’s response. This could be a REST call using requests.post with JSON payload containing the prompt and model name.
+import os, requests
+def call_genai_model(prompt: str) -> str:
+    api_url = os.getenv("GENAI_API_URL", "http://localhost:8000/ai-api")
+    model_name = os.getenv("MODEL_NAME", "llama2")  # e.g., "gemini" or "llama"
+    payload = {"model": model_name, "prompt": prompt}
+    resp = requests.post(api_url, json=payload, timeout=30)
+    resp.raise_for_status()
+    result = resp.json()
+    return result.get("summary") or result.get("output") or ""  # depending on API response format
+This call_genai_model is used inside the LangGraph node for summarization.
+LangGraph Node: The GenAI node uses the above function. It takes the metrics (and possibly recent_summaries) from state, formulates the prompt, calls the model, and returns the new summary:
+def genai_summarize_node(state: HealthState):
+    metrics = state["metrics"]
+    prev_summaries = state["recent_summaries"]
+    # Build a prompt with metrics and limited history (MCP-style context)
+    prompt = build_health_prompt(metrics, prev_summaries)  # a helper to format a nice prompt string
+    summary_text = call_genai_model(prompt)
+    return {"summary": summary_text}
+graph_builder.add_node("genai_summarize", genai_summarize_node)
+We pass recent_summaries (the memory of past N summaries) into the state before running the graph (see Memory Management below). The model’s output is stored in the summary field of the state.
+We ensure the prompt is designed to get a concise, management-friendly health report from the model. The model might output a few sentences describing system status (e.g., "CPU usage is moderate, memory within limits, all 42 pods are running smoothly. The system is healthy.").
+Output Parsing and Post-Processing
+Before finalizing the run, the agent can parse or clean the model’s output if needed:
+Parsing Node: The parse_output node takes the raw summary from the model and can perform any cleanup or structuring. For example, ensure it’s plain text (strip any extra JSON or formatting the model might have returned), or truncate if too long.
+def parse_output_node(state: HealthState):
+    raw_summary = state["summary"]
+    cleaned = raw_summary.strip()  # simple cleanup; could add more processing
+    return {"summary": cleaned}
+graph_builder.add_node("parse_output", parse_output_node)
+In many cases, the model will already return a ready-to-use summary, so this step is minimal. However, having a parsing stage is useful for reliability (it could also, for instance, detect if the model failed to follow instructions and adjust output).
+The parsed summary remains in the state, ready to be consumed by the caller.
+MCP-Style Memory Management (Contextual History)
+To provide context and continuity between health checks, the agent implements a limited in-memory history of recent health summaries (inspired by the Model Context Protocol approach to persistent context):
+The agent keeps a global list recent_summaries (or in an object’s attribute) to store the last N summaries (configurable, e.g., N=5).
+Use in GenAI Prompt: This history is provided to the GenAI summarization step so the model can consider prior state. For example, if the last summary noted a high memory usage, and it’s now normal, the model might mention that improvement. The memory helps the model avoid contradictory or redundant outputs by knowing what was previously reported​
+techifysolutions.com
+.
+Memory Update: After each successful health check run (whether scheduled or on-demand), the new summary is appended to the recent_summaries list. If the list exceeds N entries, the oldest entry is dropped (FIFO). This ensures memory size is bounded.
+Integration with LangGraph: We inject the current history into the LangGraph state each run. For instance:
+initial_state = {
+    "recent_summaries": recent_summaries.copy(),  # pass a copy of current history
+}
+final_state = compiled_graph.invoke(initial_state)
+new_summary = final_state["summary"]
+We don't modify recent_summaries within the graph; it’s used read-only for context. After invoke returns, we update the global recent_summaries list in the Python code:
+recent_summaries.append(new_summary)
+if len(recent_summaries) > MAX_HISTORY:
+    recent_summaries.pop(0)
+This design ensures the agent retains in-memory context during runtime (if the process restarts, the history resets, which is acceptable for this use-case). It mimics an MCP-like memory server on a small scale by keeping only relevant recent context and not growing unbounded.
+Scheduled Health Checks (Background Scheduler)
+The agent runs periodic health checks automatically using a scheduler:
+APScheduler: We use the Advanced Python Scheduler’s BackgroundScheduler to schedule the run_health_check task every 5 minutes (configurable interval). APScheduler runs jobs in the same process on a background thread​
+sentry.io
+, so it will not block the main FastAPI server operation.
+Job Definition: We create a job that calls our health check workflow:
+from apscheduler.schedulers.background import BackgroundScheduler
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(run_health_check, "interval", minutes=5)
+scheduler.start()
+Here run_health_check is a function that encapsulates executing the LangGraph workflow (detect platform, collect metrics, call model, etc.), updates the memory, and logs the result. This function essentially wraps the steps: it prepares the initial state (with recent_summaries), calls compiled_graph.invoke, then processes the result (print, log, update memory).
+Thread Safety: Since the scheduler might run in a separate thread from the API requests, we guard shared resources (like the recent_summaries list and possibly the model API if needed) with a lock or ensure atomic operations. The memory update snippet above is simple enough to be atomic for list operations in CPython, but for thread safety a threading.Lock around the update could be used if concurrency is high. In practice, collisions are rare (5-minute interval vs occasional API calls).
+Lifecycle: The scheduler starts when the application launches. We ensure it shuts down gracefully on program exit (APScheduler’s background scheduler will shut on main thread exit, or we can explicitly call scheduler.shutdown() in a FastAPI shutdown event or using FastAPI’s lifespan context​
+sentry.io
+).
+FastAPI Web Service (On-Demand Checks)
+In addition to the background job, the agent exposes a FastAPI web server that allows users or other services to trigger health checks on demand and retrieve the latest summary:
+FastAPI Setup: We create a FastAPI app that runs continuously on the VM (for example, using Uvicorn to serve). The app has an endpoint /health-summary.
+from fastapi import FastAPI
+app = FastAPI(title="GenAI Health Check Agent", description="Provides health summaries via GenAI", version="1.0")
+
+@app.get("/health-summary")
+def get_health_summary():
+    """Run an on-demand health check and return the summary."""
+    summary = run_health_check()  # this will execute the same workflow and update memory
+    return {"summary": summary}
+When this endpoint is called (HTTP GET), it triggers the run_health_check() function and returns the latest summary in JSON. This provides on-demand capability.
+Swagger UI: FastAPI automatically generates an OpenAPI spec and provides a Swagger UI at /docs by default. We ensure our endpoint has a docstring and the FastAPI title/description are set, so the Swagger UI is informative. Through Swagger or any REST client, a user can invoke the health check at any time.
+Reusing Memory and State: Because the API and scheduler run within the same process, they share the recent_summaries memory. An on-demand check will include context from the last scheduled check, and vice versa. The run_health_check function is common – it uses the global compiled_graph and recent_summaries. This fulfills the requirement that the agent retains summaries between scheduled and manual runs (they all use the same in-memory state).
+Concurrency: If an on-demand request comes while a scheduled job is running, FastAPI (with Uvicorn) might handle them on different threads. The function run_health_check should ideally be thread-safe. To avoid race conditions, we can use a lock around its critical section (metrics collection and memory update). Also, the Prometheus queries and model calls are I/O-bound; they could be done asynchronously. Simpler approach: allow them to run sequentially by the GIL (likely fine if not heavy traffic). For robust production use, one could add async def get_health_summary() and run the check in an executor, but this might be overkill here.
+Logging and Output Persistence
+Every health check result is both printed to the console and saved to a log file for auditing:
+Console Output: The run_health_check() function prints the summary (and potentially key metrics) to standard output. This is useful if running the script manually or viewing real-time logs via VM console.
+File Logging: We configure Python’s logging to append to a file (e.g., health_agent.log). For example:
+import logging
+logging.basicConfig(filename="health_agent.log", level=logging.INFO,
+                    format="%(asctime)s [HealthCheck] %(message)s")
+logger = logging.getLogger("health_agent")
+Each time a summary is generated, we do:
+logger.info(f"Health Summary: {summary}")
+This will timestamp and log the summary. If needed, metrics details can also be logged for troubleshooting.
+Log Rotation: (Optional) In a long-running environment, the log file could be rotated to prevent unbounded growth (using logging.handlers.RotatingFileHandler). This is an extensibility point; by default, we may keep it simple.
+The combination of in-memory recent summaries and on-disk log ensures both short-term context for AI and long-term record of health checks.
+Configuration and Extensibility
+The agent is designed to be easily configurable and extensible without code changes:
+Environment Variables / Config File: Key settings are loaded from environment or a config file:
+PROM_URL: The base URL of the Prometheus server (e.g., "http://prometheus:9090"). All metric queries will be sent here. This allows pointing to a local Prom instance, a Kubernetes service, or a remote Prometheus.
+MODEL_API_URL: The URL for the internal GenAI model API. If not provided, the agent could default to a stub or require configuration. This decouples the agent from a specific model implementation.
+MODEL_NAME: A flag to choose which model to use (e.g., "gemini" or "llama2"). The call_genai_model function can adjust payload or endpoint based on this.
+HEALTHCHECK_INTERVAL: The schedule interval in minutes (default 5). If one wants to change frequency, they can set this env var and the scheduler will use it.
+MAX_HISTORY: How many past summaries to retain in memory (default 5, for example).
+LOG_FILE: Path to the log file (default "health_agent.log").
+Other options: e.g., PROM_QUERIES could be configurable if one wants to customize the PromQL for CPU, memory, etc., or include additional metrics.
+Modular Code Structure: The code is organized into a package for clarity:
+genai_health_agent/
+    main.py            # Entry point: starts FastAPI and scheduler
+    health_workflow.py # Defines LangGraph state and nodes (platform, metrics, AI, parse)
+    metrics.py         # Functions to query Prometheus (and any needed helpers)
+    platform_detect.py # Platform detection logic
+    genai_client.py    # Functions to call the GenAI model API
+    memory.py          # Manages the recent_summaries list and MAX_HISTORY
+    config.py          # Reads environment variables or config file
+    requirements.txt   # Python dependencies
+Each module can be maintained or tested in isolation. For instance, you can test metrics.collect_metrics with dummy Prometheus endpoints or genai_client.call_genai_model with a stubbed HTTP server.
+Extensibility: To extend the agent, one can:
+Add new metrics or health signals (e.g., disk usage, network latency) by updating collect_metrics and adjusting the prompt.
+Change the GenAI prompt or post-processing to yield different formats (e.g., JSON output, or a more detailed report).
+Integrate an external memory store (MCP server, database) if persistence beyond runtime is needed.
+Deploy the FastAPI app behind an authentication layer if security is a concern, etc.
+The use of LangGraph means more complex logic (conditional checks, multiple agents) can be introduced later without rewriting the whole structure – we can add new nodes or branches in the graph (for example, a decision node that if metrics exceed a threshold, have the model also suggest remedial actions).
+Implementation Snippets
+
+Below are illustrative code snippets showing how the pieces come together. These would be distributed across the modules as described above: 1. Platform Detection (platform_detect.py):
+import os, platform
+
+def detect_platform() -> str:
+    \"\"\"Detects if running in k8s, windows, or linux.\"\"\"
+    if os.getenv("KUBERNETES_SERVICE_HOST"):
+        return "k8s"
+    system = platform.system().lower()  # e.g., 'windows' or 'linux' or 'darwin'
+    if "windows" in system:
+        return "windows"
+    elif "linux" in system:
+        return "linux"
+    else:
+        return "linux"  # default to linux for unknown systems
+2. Prometheus Metrics Collection (metrics.py):
+import requests, os
+
+PROM_URL = os.getenv("PROM_URL", "http://localhost:9090")  # Prometheus base URL
+
+# Example PromQL queries for each platform
+QUERIES = {
+    "linux": {
+        "cpu_percent": '100 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100',
+        "mem_percent": '(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100'
+    },
+    "windows": {
+        # Windows exporter metrics (assuming wmi_exporter is used)
+        "cpu_percent": '100 - avg(rate(wmi_cpu_time_total{mode="idle"}[5m])) * 100',
+        "mem_percent": '(1 - (wmi_os_physical_memory_free_bytes / wmi_os_physical_memory_total_bytes)) * 100'
+    },
+    "k8s": {
+        # For k8s, we might still gather node metrics similar to linux for the nodes the agent runs on
+        "cpu_percent": '100 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100',
+        "mem_percent": '(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100',
+        # Possibly cluster-wide metrics, e.g., number of pods not ready:
+        "unready_pods": 'sum(kube_pod_status_phase{phase="Failed"})'
+    }
+}
+
+def query_prometheus(query: str):
+    url = f"{PROM_URL}/api/v1/query"
+    resp = requests.get(url, params={"query": query}, timeout=5)
+    resp.raise_for_status()
+    data = resp.json().get("data", {})
+    result = data.get("result", [])
+    if not result:
+        return None
+    # For simplicity, take the first result's value
+    value = result[0].get("value")  # [timestamp, value]
+    return float(value[1]) if value else None
+
+def collect_metrics(platform: str) -> dict:
+    \"\"\"Collects relevant metrics from Prometheus for the given platform.\"\"\"
+    metrics = {}
+    queries = QUERIES.get(platform, QUERIES["linux"])
+    for key, promql in queries.items():
+        try:
+            val = query_prometheus(promql)
+        except Exception as e:
+            val = None
+        metrics[key] = val
+    return metrics
+Note: The PromQL expressions above are examples. In a real setup, they should be adjusted to match the available metrics. The function handles missing data gracefully (returns None if not found). 3. Generative AI Client (genai_client.py):
+import requests, os
+
+MODEL_API_URL = os.getenv("MODEL_API_URL", "")  # e.g., "http://internal-api/llm"
+MODEL_NAME = os.getenv("MODEL_NAME", "llama")
+
+def call_genai_model(prompt: str) -> str:
+    \"\"\"Calls the internal GenAI API with the given prompt and returns the model output.\"\"\"
+    if not MODEL_API_URL:
+        raise RuntimeError("No GenAI API URL configured")
+    payload = {"model": MODEL_NAME, "prompt": prompt}
+    resp = requests.post(MODEL_API_URL, json=payload, timeout=30)
+    resp.raise_for_status()
+    result = resp.json()
+    # Assume the API returns the summary text under 'output' or similar key:
+    return result.get("output") or result.get("summary") or ""
+This client is model-agnostic. For example, if MODEL_NAME="gemini", the back-end might route to Gemini; if "llama", to a LLaMA model. We assume the API handles that. If direct integration was possible (e.g., using a Python SDK for the model), this function could be replaced accordingly. 4. Health Check Workflow using LangGraph (health_workflow.py):
+from typing_extensions import TypedDict
+from langgraph.graph import StateGraph, START, END
+from platform_detect import detect_platform
+from metrics import collect_metrics
+from genai_client import call_genai_model
+
+# Define the state schema for the LangGraph workflow
+class HealthState(TypedDict):
+    platform: str
+    metrics: dict
+    summary: str
+    recent_summaries: list[str]
+
+# Initialize the LangGraph state machine
+builder = StateGraph(HealthState)
+
+# Node 1: Platform detection
+def platform_node(state: HealthState):
+    plat = detect_platform()
+    return {"platform": plat}
+builder.add_node("platform_detect", platform_node)
+
+# Node 2: Metrics collection
+def metrics_node(state: HealthState):
+    plat = state["platform"]
+    metrics = collect_metrics(plat)
+    return {"metrics": metrics}
+builder.add_node("metrics_collect", metrics_node)
+
+# Node 3: GenAI summarization
+def summarize_node(state: HealthState):
+    metrics = state["metrics"]
+    prev_summaries = state.get("recent_summaries", [])
+    # Create a prompt for the model using metrics and previous summaries (if any)
+    prompt_parts = []
+    if prev_summaries:
+        last_summary = prev_summaries[-1]  # use the most recent summary for context
+        prompt_parts.append(f"Previous summary: {last_summary}")
+    # Add current metrics
+    # (Convert metrics dict to a friendly string, e.g., "CPU=40%, Memory=70%")
+    metric_text = ", ".join(f"{k}={v:.1f}%" for k,v in metrics.items() if v is not None)
+    prompt_parts.append(f"Current metrics: {metric_text}")
+    prompt_parts.append("Provide a concise overall health status update.")
+    prompt = "\n".join(prompt_parts)
+    summary = call_genai_model(prompt)
+    return {"summary": summary}
+builder.add_node("genai_summarize", summarize_node)
+
+# Node 4: Output parsing (cleanup)
+def parse_node(state: HealthState):
+    summary = state["summary"] or ""
+    cleaned = summary.strip()
+    # (Optional) Could add truncation or format adjustments here
+    return {"summary": cleaned}
+builder.add_node("parse_output", parse_node)
+
+# Define edges for workflow sequence
+builder.add_edge(START, "platform_detect")
+builder.add_edge("platform_detect", "metrics_collect")
+builder.add_edge("metrics_collect", "genai_summarize")
+builder.add_edge("genai_summarize", "parse_output")
+builder.add_edge("parse_output", END)
+
+# Compile the graph for execution
+health_graph = builder.compile()
+This defines the end-to-end workflow. Each node function uses the helper functions from other modules. The state keys platform, metrics, and summary are updated sequentially. We also pass along recent_summaries in the state without modifying it inside nodes (except we could include it in prompt context). The LangGraph ensures each function gets the state and returns a partial state update which is merged. 5. Main Application (main.py):
+import threading
+import logging
+from health_workflow import health_graph  # the compiled LangGraph
+from memory import recent_summaries, MAX_HISTORY  # memory store
+from fastapi import FastAPI
+
+# Configure logging
+logging.basicConfig(filename=os.getenv("LOG_FILE", "health_agent.log"),
+                    level=logging.INFO,
+                    format="%(asctime)s [HealthCheck] %(message)s")
+logger = logging.getLogger("health_agent")
+
+# FastAPI app
+app = FastAPI(title="GenAI Health Check Agent", version="1.0",
+              description="Agent that provides health summaries using metrics and GenAI.")
+
+# Lock for thread-safe operations
+lock = threading.Lock()
+
+def run_health_check() -> str:
+    \"\"\"Executes the health check workflow and returns the summary.\"\"\"
+    global recent_summaries
+    # Prepare initial state with a copy of recent summaries
+    init_state = {"recent_summaries": list(recent_summaries)}
+    # Run the LangGraph workflow
+    output_state = health_graph.invoke(init_state)  # returns a dict (HealthState)
+    summary = output_state.get("summary", "")
+    # Update memory and logs atomically
+    with lock:
+        if summary:
+            recent_summaries.append(summary)
+            if len(recent_summaries) > MAX_HISTORY:
+                recent_summaries.pop(0)
+            print(f"[HealthCheck] {summary}")
+            logger.info(f"{summary}")
+    return summary
+
+# FastAPI endpoint for on-demand check
+@app.get("/health-summary")
+def get_health_summary():
+    \"\"\"Trigger an on-demand health check and get the latest summary.\"\"\"
+    summary = run_health_check()
+    return {"summary": summary}
+
+# Schedule the periodic health checks using APScheduler
+from apscheduler.schedulers.background import BackgroundScheduler
+scheduler = BackgroundScheduler()
+interval_minutes = int(os.getenv("HEALTHCHECK_INTERVAL", "5"))
+scheduler.add_job(run_health_check, "interval", minutes=interval_minutes, id="health_job")
+scheduler.start()
+
+# (Optional) Handle graceful shutdown of scheduler with FastAPI lifespan event
+from contextlib import asynccontextmanager
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup yield (nothing to initialize besides scheduler which is already started)
+    try:
+        yield
+    finally:
+        scheduler.shutdown()
+app.lifespan_context = lifespan
+
+# If running as script, use Uvicorn to serve (for example)
+if __name__ == "__main__":
+    import uvicorn, os
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", "8000"))
+    uvicorn.run(app, host=host, port=port)
+A few notes on the above:
+We use a lock to ensure that if run_health_check is called concurrently (via API and scheduler), the updates to recent_summaries and logging happen in a thread-safe manner.
+recent_summaries and MAX_HISTORY come from a memory.py module, which might simply initialize recent_summaries = [] and MAX_HISTORY = 5 (or read from config).
+The FastAPI lifespan context is used to shut down the scheduler when the app stops (to avoid background threads lingering).
+Running Uvicorn inside if __name__ == "__main__": allows the module to be executed directly. In production, one could also run via the command line: uvicorn main:app.
+6. Memory Management (memory.py):
+MAX_HISTORY = int(os.getenv("MAX_HISTORY", "5"))
+recent_summaries: list[str] = []  # in-memory list to store last N summaries
+This simple module holds the global memory. Because the app and scheduler share the process, importing this module gives access to the same list object. 7. Requirements (requirements.txt): The project’s dependencies are listed for easy installation:
+fastapi
+uvicorn[standard]
+apscheduler
+requests
+typing_extensions   # if using Python <3.11 for TypedDict
+langgraph
+langchain           # LangGraph may require LangChain base library
+# (Any specific LLM client libs if needed, e.g., for internal API if provided as SDK)
+These can be installed via pip to set up the environment.
+Usage and Deployment
+
+To use the health check agent:
+Configuration: Set the required environment variables (PROM_URL, MODEL_API_URL, etc.) or edit a config file that the config.py (if implemented) can read. Ensure the Prometheus server is accessible and scraping the target systems, and the GenAI model API is running and reachable.
+Installation: Install the Python dependencies using pip install -r requirements.txt. Python 3.9+ is recommended.
+Running the Agent: Launch the main.py script. For example:
+export PROM_URL="http://prometheus.mycorp.internal:9090"
+export MODEL_API_URL="http://ai-server.internal/generate"
+export MODEL_NAME="gemini"
+export HEALTHCHECK_INTERVAL=5
+export MAX_HISTORY=5
+python3 main.py
+This will start the FastAPI server (listening on port 8000 by default) and the background scheduler.
+Automated Checks: Once running, the agent will perform health checks every 5 minutes. You will see logs printed to console and saved to health_agent.log with each summary.
+On-Demand Checks: You can trigger a manual check by accessing the endpoint, e.g., via curl:
+curl http://<server>:8000/health-summary
+This will return a JSON response like:
+{"summary": "CPU usage is moderate (45%), memory usage is normal (70%). All pods are healthy. System is operating normally."}
+You can also open a browser at http://<server>:8000/docs to use the interactive Swagger UI to invoke the endpoint.
+Stopping the Agent: Use CTRL+C to stop the process. The scheduler will shut down gracefully.
+Security & Hardening: For a production environment, it’s advisable to secure the FastAPI endpoint (e.g., behind authentication or internal network only) because it could trigger load on the system (from Prometheus and model usage). Also, ensure the Prometheus queries used are efficient and the model calls have appropriate timeout and error handling (the code uses raise_for_status() and catches exceptions to avoid crashes). Testing: Each module can be tested in isolation. For instance, you can test collect_metrics("linux") by pointing PROM_URL to a test Prometheus with known data. The GenAI call can be tested with a stub (set MODEL_API_URL to a local test server that returns a fixed response). The LangGraph workflow can be dry-run by calling health_graph.invoke({"recent_summaries": []}) with some dummy values or by monkeypatching functions to avoid real HTTP calls.
+Management Summary (Key Points)
+
+Unified Health Monitoring: The solution provides a single, standalone agent that can monitor Kubernetes clusters, Windows servers, and Linux servers uniformly. It leverages existing Prometheus metrics, avoiding the need to install new monitoring agents on each system.
+Intelligent Summaries with GenAI: Instead of raw metrics, the agent produces natural-language health summaries using a Generative AI model. This makes system status accessible to non-engineers and management, highlighting important details in plain English.
+Automated & On-Demand Checks: Health checks run every 5 minutes automatically (configurable), ensuring timely detection of issues. Additionally, a lightweight API allows on-demand checks (e.g., by a user or an external scheduler), providing flexibility in usage.
+Stateful Context (MCP-Style Memory): The agent maintains a short memory of recent health states, enabling it to recognize trends (e.g., “memory usage has improved since last check”) and provide context-aware reports. This approach improves the quality of insights without storing large history.
+Easy Deployment & Extensibility: Designed for simplicity, the agent runs on any VM with Python—no Kubernetes or Celery required for itself. Configuration is done via environment variables, and the code is modular for easy extension (adding metrics or different model backends). The FastAPI UI (Swagger) and log outputs also make it straightforward to integrate into operations and to present the results to stakeholders.
+
+
+
+
+
+
+Sources
+You said:
+Augggest me important solutions using Prometheus metrics and ai
+ChatGPT said:
+​Integrating Prometheus metrics with AI unlocks powerful capabilities for system monitoring, optimization, and automation. Here are some impactful solutions where AI enhances Prometheus-based observability:​
+
+🔍 1. AI-Driven Anomaly Detection & Root Cause Analysis
+
+AI models can analyze Prometheus time-series data to detect anomalies in real-time, identify subtle patterns, and perform root cause analysis across logs, metrics, and traces. This approach enables early detection of issues and faster troubleshooting. ​
+DZone
+
+🧠 2. Natural Language to PromQL Conversion
+
+Tools like PromAssistant leverage large language models to translate natural language queries into Prometheus Query Language (PromQL). This simplifies metric querying for engineers, reducing the need to learn complex syntax. ​
+arXiv
+
+🧪 3. AI Model Observability
+
+Integrating Prometheus with AI platforms allows monitoring of AI model performance, including metrics like inference latency and accuracy. This observability is crucial for ensuring model reliability and performance in production environments. ​
+modular.com
+
+📊 4. Predictive Analytics & Autoscaling
+
+Combining Prometheus with AI tools like Federator.ai enables predictive analytics for resource utilization, facilitating intelligent autoscaling and cost optimization. This integration helps in proactive resource management and performance tuning. ​
+Medium
+
+⚡ 5. Energy & Emissions Monitoring
+
+Solutions like CEEMS utilize Prometheus metrics to monitor energy consumption and emissions of workloads in real-time. This capability is essential for organizations aiming to track and reduce their environmental footprint. ​
+arXiv
+
+🤖 6. AI-Powered Alerting & Self-Healing
+
+AI can enhance alerting mechanisms by reducing false positives and enabling self-healing actions, such as automated service restarts or resource adjustments, based on Prometheus alerts. This leads to more resilient and autonomous systems. ​
+
+🧭 7. AI-Assisted Query Generation
+
+Generative AI can assist in constructing PromQL queries based on user input, streamlining the process of data retrieval and analysis from Prometheus. This reduces the learning curve for new users and accelerates data-driven decision-making. ​
+
+🧰 8. AI Agents for Workflow Automation
+
+Integrating AI agents with Prometheus can automate repetitive tasks, enhance data categorization, and improve knowledge retrieval, leading to increased operational efficiency and reduced manual effort. ​
+getguru.com
+
+These solutions demonstrate the synergy between Prometheus and AI, offering advanced capabilities for monitoring, analysis, and automation in modern IT environments.​
+Medium
+
+
+
+
+
+
+
+Sources
+You said:
+Detailed solutions for below 
+
+🧭 7. AI-Assisted Query Generation
+ChatGPT said:
+​AI-assisted PromQL query generation simplifies the process of interacting with Prometheus metrics by translating natural language queries into PromQL, making it more accessible for users without deep expertise in PromQL syntax. Here's a detailed overview of how this integration works, its benefits, and implementation strategies:​
+
+🧭 AI-Assisted PromQL Query Generation
+
+🔍 Overview
+Prometheus uses PromQL, a powerful but complex query language, to retrieve and analyze time-series data. Crafting PromQL queries requires understanding metric names, labels, and functions, which can be challenging for users. AI-assisted query generation leverages large language models (LLMs) to interpret natural language inputs and generate corresponding PromQL queries, streamlining the querying process.​
+yeschat.ai
+
+🧠 How It Works
+Natural Language Input: Users input queries in plain English, such as "Show me the average CPU usage over the last 5 minutes."​
+Medium
++2
+Medium
++2
+yeschat.ai
++2
+Contextual Understanding: The AI model interprets the query, identifying relevant metrics, time ranges, and aggregation functions.​
+PromQL Generation: Based on the interpretation, the AI constructs an appropriate PromQL query.​
+Execution and Visualization: The generated PromQL query is executed in Prometheus, and the results are visualized using tools like Grafana.​
+🛠️ Implementation Strategies
+PromAssistant Framework: An LLM-based framework that uses a knowledge graph to understand system context and generate accurate PromQL queries from natural language inputs. ​
+arXiv
++1
+arXiv
++1
+Grafana Integration: Incorporating AI agents into Grafana to assist users in writing PromQL queries by providing suggestions based on the data source schema. ​
+GitHub
++1
+GitHub
++1
+Amazon Bedrock: Utilizing Amazon Bedrock to process natural language queries and generate PromQL queries for Amazon Managed Service for Prometheus. ​
+Amazon Web Services, Inc.
+✅ Benefits
+Accessibility: Enables users without deep PromQL knowledge to interact with Prometheus data effectively.​
+Efficiency: Reduces the time and effort required to write complex queries.​
+Accuracy: Minimizes errors in query syntax and logic.​
+Scalability: Facilitates broader adoption of Prometheus by lowering the learning curve.​
+PR Newswire
+📈 Use Cases
+DevOps Monitoring: Quickly generate queries to monitor system performance metrics.​
+yeschat.ai
+Alert Investigation: Translate alert messages into PromQL queries to identify root causes.​
+Medium
+Dashboard Creation: Simplify the process of building Grafana dashboards by generating necessary queries.​
+Medium
+🔐 Considerations
+Data Privacy: Ensure that AI models handling queries comply with data privacy and security standards.​
+Model Accuracy: Continuously train and update AI models to improve the accuracy of generated queries.​
+User Training: Educate users on how to effectively interact with AI-assisted tools for optimal results.​
+Integrating AI-assisted query generation into your Prometheus monitoring setup can significantly enhance usability and efficiency, making it easier for teams to gain insights and respond to system metrics.​
+
+
+
+
+
+
+
+Sources
+You said:
+Management Summary (Key Points) can have more detailed to present to management 
+ChatGPT said:
+​Certainly! Here's a comprehensive management summary detailing the benefits and strategic implications of implementing AI-assisted PromQL query generation in your organization.​
+
+📊 Management Summary: AI-Assisted PromQL Query Generation
+
+1. Enhanced Operational Efficiency
+Accelerated Query Development: AI tools like PromAssistant and Grafana's AI agents enable engineers to generate PromQL queries from natural language inputs, reducing the time spent on manual query writing. ​
+Reduced Learning Curve: By abstracting the complexity of PromQL, these tools allow team members with varying levels of expertise to interact with Prometheus data effectively.​
+2. Improved Decision-Making
+Real-Time Insights: Natural language interfaces facilitate quicker access to critical metrics, supporting timely and informed decision-making.​
+itsdart.com
+Customized Dashboards: AI-assisted tools can help create tailored dashboards that align with specific business objectives, enhancing visibility into key performance indicators.​
+3. Scalability and Adaptability
+Enterprise-Wide Adoption: Simplifying query generation encourages broader use of monitoring tools across departments, fostering a data-driven culture.​
+Integration with Existing Systems: These AI tools can be integrated with platforms like Grafana and Amazon Managed Service for Prometheus, ensuring compatibility with current infrastructure. ​
+Amazon Web Services, Inc.
+4. Cost Optimization
+Resource Efficiency: By streamlining the query process, organizations can allocate engineering resources more effectively, focusing on higher-value tasks.​
+Reduced Training Expenses: Minimizing the need for extensive PromQL training programs leads to cost savings in employee development.​
+5. Strategic Advantages
+Competitive Edge: Leveraging AI for operational tasks positions the organization at the forefront of technological innovation.​
+Enhanced Collaboration: Cross-functional teams can engage more readily with monitoring tools, promoting collaborative problem-solving and continuous improvement.​
+Implementing AI-assisted PromQL query generation aligns with strategic objectives by enhancing efficiency, supporting informed decision-making, and fostering a culture of innovation. This approach not only optimizes current operations but also positions the organization for scalable and sustainable growth.​
+
