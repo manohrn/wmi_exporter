@@ -1,0 +1,72 @@
+import csv
+import socket
+import re
+from openpyxl import load_workbook
+
+def resolve_fqdn(value):
+    try:
+        return socket.gethostbyaddr(value)[0]
+    except (socket.herror, socket.gaierror):
+        try:
+            return socket.getfqdn(value)
+        except Exception:
+            return "FQDN_Not_Resolved"
+
+# Input/Output files
+input_file = 'port_config_update.xlsx'   # Excel file
+sheet_name = 'Sheet1'
+output_csv = 'final_output.csv'
+
+# Load workbook and sheet
+wb = load_workbook(input_file)
+ws = wb[sheet_name]
+
+# Map headers to column indices
+headers = [cell.value for cell in ws[1]]
+col_map = {name: idx for idx, name in enumerate(headers)}
+
+# Output headers
+output_headers = ['name', 'type', 'group', 'frequency', 'fqdn', 'port', 'appid', 'fullappid', 'basemon']
+output_rows = [output_headers]
+
+# Process rows
+for row in ws.iter_rows(min_row=2, values_only=True):
+    disabled_value = str(row[col_map.get('Disabled', -1)]).lower()
+    if disabled_value == 'yes':
+        continue
+
+    tags = str(row[col_map.get('Tags', -1)]).lower()
+
+    # Extract AppID
+    appid_match = re.search(r'\bAppID\s*[:=]\s*([\w\-\.]+)', tags)
+    full_appid = appid_match.group(1) if appid_match else ''
+    appid = full_appid.split('.')[0] if '.' in full_appid else full_appid
+
+    # Extract BASEMON
+    basemon_match = re.search(r'\bBASEMON\s*[:=]\s*(\w+)', tags, re.IGNORECASE)
+    basemon = 'yes' if basemon_match else 'no'
+
+    # Resolve FQDN
+    raw_fqdn = str(row[col_map.get('fqdn', -1)]).strip()
+    resolved_fqdn = resolve_fqdn(raw_fqdn)
+
+    # Build output row
+    output_row = [
+        row[col_map.get('name')],
+        row[col_map.get('type')],
+        row[col_map.get('group')],
+        row[col_map.get('frequency')],
+        resolved_fqdn,
+        row[col_map.get('port')],
+        appid,
+        full_appid,
+        basemon
+    ]
+    output_rows.append(output_row)
+
+# Write to CSV
+with open(output_csv, mode='w', newline='') as f:
+    writer = csv.writer(f)
+    writer.writerows(output_rows)
+
+print(f"CSV written successfully as '{output_csv}'")
