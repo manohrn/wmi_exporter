@@ -1,0 +1,129 @@
+Thanks for confirming. I’ll prepare separate recording rule groups for CPU, memory, disk, and network usage, each set to evaluate every 5 minutes. These will be compatible with your Grafana Agent + Mimir setup and optimized for Prophet-based training in Grafana Cloud. I’ll share the full YAML rule files shortly.
+
+Research completed in 18m · 22 sources · 44 searches
+Recording Rules for CPU, Memory, Disk, and Network Usage with Grafana Agent and Mimir
+Prometheus Recording Rules for CPU, Memory, Disk, and Network Usage
+
+To facilitate forecasting with Grafana Cloud’s Prophet model, we define four separate recording rule groups (CPU, memory, disk, and network). Each group evaluates every 5 minutes and produces a low-cardinality metric (one series per instance) representing the resource’s utilization. We normalize CPU, memory, and disk usage to percentages (0–100), and compute network throughput as a total rate (bytes/sec). Label filtering is used to ignore ephemeral or irrelevant sources (e.g. loopback network interface, in-memory filesystems) to keep metrics “clean.” Below is a summary of each group and the recording rules in YAML format:
+CPU Usage – Total CPU utilization (%) per instance, aggregated across all CPU cores. Uses the idle CPU time from node_cpu_seconds_total to derive busy percentage​
+stackoverflow.com
+.
+Memory Usage – Total memory utilization (%) per instance, using available vs. total memory. This accounts for file caches (treating cached memory as available) to reflect true used memory​
+stackoverflow.com
+.
+Disk Usage – Total disk space used (%) per instance, summed across all real disk mount points. Ignores transient filesystems like tmpfs or Docker overlay to avoid ephemeral storage in the total​
+bugzilla.redhat.com
+. Uses available vs. total bytes for an accurate percentage​
+robustperception.io
+.
+Network Usage – Total network throughput per instance, split into receive and transmit bytes per second. Sums across all network interfaces except the loopback interface lo (excluded to focus on external traffic). Uses 5m average rates of the byte counters​
+robustperception.io
+.
+Each rule group is shown below with its recording rules. All groups use a 5-minute evaluation interval (interval: 5m). You can combine these into a single YAML file under a top-level groups: key for Grafana Agent or Mimir.
+CPU Usage Recording Rules
+
+The CPU usage group calculates the percentage of CPU time used (non-idle) on each host. It leverages the node_cpu_seconds_total counter, filtering for mode="idle", and computes the fraction of time the CPUs were busy over the last 5 minutes. This is done by taking 1 - (idle time / total time) and converting to a percentage​
+stackoverflow.com
+. We average across all CPU cores per instance, so the result is one time series per host (labelled by instance). This recorded metric is ideal for forecasting overall CPU load (it ranges from 0 to 100). The rule avoids high cardinality by dropping the per-core and mode labels.
+groups:
+- name: cpu_usage
+  interval: 5m
+  rules:
+  - record: node_cpu_usage_percent
+    expr: '100 * (1 - avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])))'
+Explanation: The expression rate(node_cpu_seconds_total{mode="idle"}[5m]) gives the average fraction of time each CPU core was idle over 5 minutes. By doing 1 - ... we get the busy fraction per core, and avg by(instance) then finds the average busy fraction across all cores on the instance. Finally, multiplying by 100 converts it to a percentage​
+stackoverflow.com
+​
+stackoverflow.com
+. This yields the total CPU usage per instance in % (e.g. if half of a 2-core system is busy, it reports 50%). This formula is a known pattern for CPU utilization in Prometheus​
+stackoverflow.com
+.
+Memory Usage Recording Rules
+
+The memory usage group computes the percentage of RAM used on each host. To avoid counting cached memory as “used,” we use the available memory metric. Specifically, node_memory_MemAvailable_bytes (memory available for programs) is subtracted from node_memory_MemTotal_bytes, then divided by total memory to get usage. This effectively counts memory in use by applications (including OS buffers that cannot be freed) as a percentage of total. Using MemAvailable ensures file cache and buffers are treated as free, giving a more realistic usage metric​
+stackoverflow.com
+. The result is one time series per instance, labeled by instance.
+- name: memory_usage
+  interval: 5m
+  rules:
+  - record: node_memory_usage_percent
+    expr: '100 * (1 - sum by(instance)(node_memory_MemAvailable_bytes) / sum by(instance)(node_memory_MemTotal_bytes))'
+Explanation: The expression node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes gives the current used memory bytes (total minus free/available). Dividing by total and multiplying by 100 yields the percentage of memory used​
+tigera.io
+. We use sum by(instance) around the metrics to ensure we aggregate to one value per instance (dropping any unnecessary labels). The use of MemAvailable means that cache and buffer memory (which the OS can reclaim) are not counted as used, so the percentage focuses on actual memory pressure. This produces a low-cardinality gauge of memory usage per host, suitable for trend analysis.
+Disk Usage Recording Rules
+
+The disk usage group tracks the percentage of disk space used on each host. We sum used bytes across all relevant filesystems and divide by total capacity. To avoid inflation from pseudo or ephemeral filesystems, we exclude certain filesystem types: here we filter out fstype="tmpfs" (in-memory filesystems) and fstype="overlay" (Docker/containers overlay mounts). These tend to be ephemeral and can distort totals​
+bugzilla.redhat.com
+. By ignoring them, we focus only on real persistent disks. The rule uses node_filesystem_avail_bytes (available space for non-root users) and node_filesystem_size_bytes for each filesystem. Using available space (instead of raw free) accounts for reserved blocks, yielding an accurate usage percentage​
+robustperception.io
+. All filesystems per instance are aggregated, dropping device and mountpoint labels to produce one series per instance.
+- name: disk_usage
+  interval: 5m
+  rules:
+  - record: node_disk_usage_percent
+    expr: '100 * (1 - sum by(instance)(node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"}) / sum by(instance)(node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}))'
+Explanation: For each instance, we sum the available bytes across all non-tmpfs/overlay filesystems and also sum the total size bytes across those filesystems. The ratio avail / size (for the summed values) is the fraction of disk space free (available) on the host. We do 1 - (avail/size) to get the fraction used, then multiply by 100 to express it as a percentage​
+robustperception.io
+. This yields an overall disk usage percentage per host. By filtering out tmpfs and overlay file systems, we avoid counting ephemeral mounts that could skew the data (for example, in-memory filesystems or container layers)​
+bugzilla.redhat.com
+. The result is a single time series per instance showing how full the real disks are (e.g. “node_disk_usage_percent” = 75%). This low-cardinality metric is useful for forecasting storage capacity needs over time.
+Network Usage Recording Rules
+
+The network usage group provides two recorded metrics per instance: one for total network inbound throughput and one for total network outbound throughput. We calculate these as the average bytes per second over 5 minutes, summed across all relevant interfaces. We use the node_network_receive_bytes_total and node_network_transmit_bytes_total counters from the node exporter, applying a rate(...[5m]) to get the per-second rate​
+robustperception.io
+. Then we sum by instance to combine all interfaces. The loopback interface (lo) is excluded via device!="lo" so that only real network interfaces are counted – this filters out internal traffic on the host that isn’t relevant for external network usage. The resulting metrics (receive and transmit rates) are per-instance aggregates, greatly reducing cardinality (no per-interface dimension in the output). These can be used to forecast network traffic trends.
+- name: network_usage
+  interval: 5m
+  rules:
+  - record: node_network_receive_bytes_per_second
+    expr: 'sum by(instance) (rate(node_network_receive_bytes_total{device!="lo"}[5m]))'
+  - record: node_network_transmit_bytes_per_second
+    expr: 'sum by(instance) (rate(node_network_transmit_bytes_total{device!="lo"}[5m]))'
+Explanation: We sum the 5-minute rate of incoming bytes across all interfaces (except loopback) to get a total incoming throughput per instance. Similarly, we sum the outgoing bytes rate for total egress throughput. The rate(...[5m]) function gives the average bytes per second over the last 5 minutes for each interface counter​
+robustperception.io
+. Summing by instance aggregates all those interfaces together, dropping the device label. Excluding device="lo" prevents counting loopback traffic, focusing the metric on real network interfaces. The recorded metrics node_network_receive_bytes_per_second and node_network_transmit_bytes_per_second represent the host’s total network I/O rates. (If needed, you can multiply by 8 in queries to convert to bits/sec, but we store it in bytes/sec​
+robustperception.io
+.) Each is a single time series per host, ideal for detecting bandwidth trends without high cardinality.
+Combined Recording Rules YAML
+
+Below is the full YAML snippet combining all four rule groups. This can be used directly in Grafana Agent or Prometheus (Mimir) configuration. Each group’s rules create the summarized metrics as discussed above:
+groups:
+- name: cpu_usage
+  interval: 5m
+  rules:
+  - record: node_cpu_usage_percent
+    expr: '100 * (1 - avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])))'
+
+- name: memory_usage
+  interval: 5m
+  rules:
+  - record: node_memory_usage_percent
+    expr: '100 * (1 - sum by(instance)(node_memory_MemAvailable_bytes) / sum by(instance)(node_memory_MemTotal_bytes))'
+
+- name: disk_usage
+  interval: 5m
+  rules:
+  - record: node_disk_usage_percent
+    expr: '100 * (1 - sum by(instance)(node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"}) / sum by(instance)(node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}))'
+
+- name: network_usage
+  interval: 5m
+  rules:
+  - record: node_network_receive_bytes_per_second
+    expr: 'sum by(instance) (rate(node_network_receive_bytes_total{device!="lo"}[5m]))'
+  - record: node_network_transmit_bytes_per_second
+    expr: 'sum by(instance) (rate(node_network_transmit_bytes_total{device!="lo"}[5m]))'
+Each recorded metric (node_cpu_usage_percent, node_memory_usage_percent, node_disk_usage_percent, node_network_receive_bytes_per_second, node_network_transmit_bytes_per_second) will be stored in Grafana Mimir with only the instance label (plus any global labels like job if not stripped). These provide a concise view of resource utilization for each host, suitable for feeding into Grafana Cloud’s Prophet-based forecasting models (which prefer a small number of well-behaved time series rather than many fine-grained ones). By updating every 5 minutes, the data is coarse enough to reduce noise but still capture trends. No predict_linear() or similar functions are used here – we’re recording the raw utilization metrics, and forecasting can be performed on top of these clean time series. The above YAML can be adjusted as needed (e.g. different label filters or metric names), but it meets the criteria for low-cardinality, normalized metrics for CPU, memory, disk, and network usage. Sources: Key formulas and best practices were derived from Prometheus documentation and community examples. For instance, the CPU usage formula using idle time is a known approach​
+stackoverflow.com
+, memory usage is calculated by the used/total ratio​
+tigera.io
+ with cache considered available​
+stackoverflow.com
+, disk usage uses available vs. size bytes​
+robustperception.io
+ while excluding ephemeral filesystems​
+bugzilla.redhat.com
+, and network throughput uses interface byte counters aggregated per host​
+robustperception.io
+. These recording rules implement those concepts in a form compatible with Grafana Agent and 
