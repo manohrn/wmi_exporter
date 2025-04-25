@@ -1,0 +1,31 @@
+#!/bin/bash
+
+# Absolute paths (optional: update this if you want to run from any location)
+BASE_DIR=$(cd "$(dirname "$0")" && pwd)
+LOG_FILE="$BASE_DIR/pipeline_$(date +%Y%m%d_%H%M%S).log"
+
+echo "===== PIPELINE STARTED: $(date) =====" | tee -a "$LOG_FILE"
+
+# Step 1: Run generate_ping_yaml.py
+echo "[INFO] Step 1: Running nslookup with basic host targets..." | tee -a "$LOG_FILE"
+python3 "$BASE_DIR/generate_ping_yaml.py" >> "$LOG_FILE" 2>&1
+if [ $? -ne 0 ]; then
+    echo "[ERROR] Step 1 failed: generate_ping_yaml.py" | tee -a "$LOG_FILE"
+    echo "===== PIPELINE FAILED =====" | tee -a "$LOG_FILE"
+    exit 1
+else
+    echo "[SUCCESS] Step 1 completed: generate_ping_yaml.py" | tee -a "$LOG_FILE"
+fi
+
+# Step 2: Run generate_ping_yaml_with_port.py
+echo "[INFO] Step 2: Running nslookup with fqdn:port targets..." | tee -a "$LOG_FILE"
+python3 "$BASE_DIR/generate_ping_yaml_with_port.py" >> "$LOG_FILE" 2>&1
+if [ $? -ne 0 ]; then
+    echo "[ERROR] Step 2 failed: generate_ping_yaml_with_port.py" | tee -a "$LOG_FILE"
+    echo "===== PIPELINE FAILED =====" | tee -a "$LOG_FILE"
+    exit 1
+else
+    echo "[SUCCESS] Step 2 completed: generate_ping_yaml_with_port.py" | tee -a "$LOG_FILE"
+fi
+
+echo "===== PIPELINE COMPLETED SUCCESSFULLY: $(date) =====" | tee -a "$LOG_FILE"
