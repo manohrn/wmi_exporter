@@ -1,0 +1,95 @@
+import openpyxl
+import yaml
+import re
+import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+def get_fqdn_from_nslookup(host):
+    try:
+        output = subprocess.check_output(['nslookup', host], text=True, stderr=subprocess.DEVNULL)
+        for line in output.splitlines():
+            if line.strip().startswith("Name:"):
+                return line.split("Name:")[1].strip()
+        return host
+    except Exception:
+        return host
+
+# Load Excel file
+excel_file = "ping_updated.xlsx"
+wb = openpyxl.load_workbook(excel_file)
+sheet = wb.active
+headers = {cell.value.strip(): idx for idx, cell in enumerate(sheet[1])}
+
+# Preprocess rows
+rows_to_process = []
+for row in sheet.iter_rows(min_row=2, values_only=True):
+    try:
+        name = row[headers["name"]]
+        group = row[headers["group"]]
+        frequency = row[headers["frequency"]]
+        host = row[headers["host"]]
+        port = row[headers.get("port")] if "port" in headers else None
+        tags = str(row[headers["tags"]])
+
+        if not host or not isinstance(host, str):
+            continue
+
+        app_id = "unknown"
+        basemon = "no"
+        bracket_groups = re.findall(r"\[(.*?)\]", tags)
+
+        if len(bracket_groups) >= 1:
+            parts = bracket_groups[0].split(",")
+            if len(parts) > 1:
+                app_id = parts[1].strip()
+
+        if len(bracket_groups) >= 2 and "basemon" in bracket_groups[1].lower():
+            basemon = "yes"
+
+        rows_to_process.append({
+            "name": name,
+            "group": group,
+            "frequency": f"{int(frequency) // 60} minutes",
+            "host": host,
+            "port": int(port) if port else None,
+            "app_id": app_id,
+            "basemon": basemon
+        })
+
+    except Exception as e:
+        print(f"Error parsing row: {e}")
+        continue
+
+# Resolve FQDNs and build YAML
+yaml_output = []
+
+def resolve_and_build(entry):
+    fqdn = get_fqdn_from_nslookup(entry["host"])
+    target = f"{fqdn}:{entry['port']}" if entry["port"] else fqdn
+    return {
+        "targets": [target],
+        "labels": {
+            "name": entry["name"],
+            "module": "icmp",
+            "monitor_type": "ping",
+            "group": entry["group"],
+            "frequency": entry["frequency"],
+            "host": entry["host"],
+            "fqdn": fqdn,
+            "app_id": entry["app_id"],
+            "basemon": entry["basemon"]
+        }
+    }
+
+# Use threading to parallelize nslookup
+with ThreadPoolExecutor(max_workers=50) as executor:
+    futures = [executor.submit(resolve_and_build, row) for row in rows_to_process]
+    for future in as_completed(futures):
+        yaml_output.append(future.result())
+
+# Save to YAML
+output_file = "ping_monitor_output_with_ports.yaml"
+with open(output_file, "w", encoding="utf-8") as f:
+    yaml.dump(yaml_output, f, sort_keys=False)
+
+print(f"\nYAML file '{output_file}' generated successfully with fqdn:port targets.")
