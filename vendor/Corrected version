@@ -1,0 +1,16 @@
+discovery.file "tcp" {
+  files = ["blackbox_tcp.yaml"]
+}
+
+discovery.file "icmp" {
+  files = ["blackbox_icmp.yaml"]
+}
+
+prometheus.exporter.blackbox "integrations_blackbox" {
+  config = "modules:\n  tcp_connect:\n    prober: tcp\n    timeout: 10s\n    tcp:\n\n  icmp:\n    prober: icmp\n    timeout: 10s\n    preferred_ip_protocol: \"ipv4\"\n"
+
+  probe_timeout_offset = "45s"
+
+  targets = discovery.file.tcp.targets
+  targets += discovery.file.icmp.targets
+}
