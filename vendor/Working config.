@@ -1,0 +1,90 @@
+logging {
+  level  = "info"
+  format = "logfmt"
+}
+
+discovery.file "tcp" {
+  files = ["blackbox_tcp.yaml"]
+}
+
+discovery.file "icmp" {
+  files = ["blackbox_icmp.yaml"]
+}
+
+prometheus.exporter.blackbox "blackbox_tcp" {
+  config = "modules:\n  tcp_connect:\n    prober: tcp\n    timeout: 10s\n    tcp:\n"
+
+  probe_timeout_offset = "45s"
+  targets = discovery.file.tcp.targets
+}
+
+prometheus.exporter.blackbox "blackbox_icmp" {
+  config = "modules:\n  icmp:\n    prober: icmp\n    timeout: 10s\n    preferred_ip_protocol: \"ipv4\"\n"
+
+  probe_timeout_offset = "45s"
+  targets = discovery.file.icmp.targets
+}
+
+discovery.relabel "integrations_blackbox_tcp" {
+  targets = prometheus.exporter.blackbox.blackbox_tcp.targets
+
+  rule {
+    target_label = "job"
+    replacement  = "integrations/blackbox_tcp"
+  }
+
+  rule {
+    source_labels = ["__param_target"]
+    target_label  = "failed_target"
+    regex         = ".*"
+  }
+}
+
+discovery.relabel "integrations_blackbox_icmp" {
+  targets = prometheus.exporter.blackbox.blackbox_icmp.targets
+
+  rule {
+    source_labels = ["__param_target"]
+    target_label  = "instance"
+  }
+
+  rule {
+    target_label = "job"
+    replacement  = "integrations/blackbox_icmp"
+  }
+}
+
+prometheus.scrape "blackbox_tcp" {
+  targets    = discovery.relabel.integrations_blackbox_tcp.output
+  forward_to = [prometheus.remote_write.integrations.receiver]
+  job_name   = "blackbox_tcp"
+  scrape_interval = "120s"
+  scrape_timeout  = "60s"
+}
+
+prometheus.scrape "blackbox_icmp" {
+  targets    = discovery.relabel.integrations_blackbox_icmp.output
+  forward_to = [prometheus.remote_write.integrations.receiver]
+  job_name   = "blackbox_icmp"
+  scrape_interval = "60s"
+  scrape_timeout  = "30s"
+}
+
+prometheus.remote_write "integrations" {
+  endpoint {
+    url = "https://prometheus-dedicated-14-prod-us-central-0.grafana.net/api/prom/push"
+
+    basic_auth {
+      username = "YOUR_USERNAME"
+      password = "YOUR_PASSWORD"
+    }
+
+    proxy_url = "http://proxy.wellsfargo.com:8080"
+  }
+
+  queue_config {
+    capacity = 5000
+    max_shards = 10
+    max_samples_per_send = 1000
+  }
+}
