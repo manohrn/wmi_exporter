@@ -1,0 +1,66 @@
+import openpyxl
+import yaml
+import re
+import subprocess
+
+def get_fqdn(host):
+    try:
+        output = subprocess.check_output(['nslookup', host], text=True)
+        match = re.search(r'Name:\s+([^\s]+)', output)
+        return match.group(1) if match else host
+    except Exception:
+        return host
+
+# Load the Excel workbook
+wb = openpyxl.load_workbook("input_ping_monitors.xlsx")
+sheet = wb.active
+
+# Find header indexes
+headers = {cell.value: idx for idx, cell in enumerate(sheet[1])}
+
+yaml_output = []
+
+for row in sheet.iter_rows(min_row=2, values_only=True):
+    name = row[headers["name"]]
+    group = row[headers["group"]]
+    frequency = row[headers["frequency"]]
+    host = row[headers["host"]]
+    tags = str(row[headers["tags"]])
+
+    # Extract app_id and basemon from tags
+    app_id = "unknown"
+    basemon = "no"
+    bracket_groups = re.findall(r"\[(.*?)\]", tags)
+
+    if len(bracket_groups) >= 1:
+        parts = bracket_groups[0].split(",")
+        if len(parts) > 1:
+            app_id = parts[1].strip()
+
+    if len(bracket_groups) >= 2 and "basemon" in bracket_groups[1].lower():
+        basemon = "yes"
+
+    fqdn = get_fqdn(host)
+
+    entry = {
+        "targets": [host],
+        "labels": {
+            "name": name,
+            "module": "icmp",
+            "monitor_type": "ping",
+            "group": group,
+            "frequency": f"{int(frequency) // 60} minutes",
+            "host": host,
+            "fqdn": fqdn,
+            "app_id": app_id,
+            "basemon": basemon
+        }
+    }
+
+    yaml_output.append(entry)
+
+# Write YAML output
+with open("ping_monitor_output.yaml", "w") as f:
+    yaml.dump(yaml_output, f, sort_keys=False)
+
+print("YAML file 'ping_monitor_output.yaml' created successfully.")
