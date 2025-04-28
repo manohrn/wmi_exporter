@@ -1,0 +1,20 @@
+namespace_suffix: "PROD1"
+
+proxy:
+  http: "http://user:pass@proxy.wellsfargo.com:8080"
+  https: "http://user:pass@proxy.wellsfargo.com:8080"
+
+base_config:
+  instance_id: "289789"
+  agent_token: "lg_cEvJYtJ0iNTc3NlY2tiWibiI6t1nN0Y6NrL4T0C405h1X2vVudCitW5hZvVt2"
+  file: "agent-base-config.yaml"
+
+kafka_snippet:
+  instance_id: "289792"
+  agent_token: "eyJrIjOiOiEyMTU2NzC4MT40X7hzBi8GQ4NWWdV2nZEfxFfhMyY4V1NiIsIm41OiJ8ROOVEi8TKFhRUFlTI"
+  file: "linux_snippets.yaml"
+
+labels_template:
+  instance_id: "289792"
+  agent_token: "eyJrIjoiOWEyYTU2MjczNTY4OTJhYzBlNGQ2MWNmNDVlZmZjFhMyY4V1NiIsIm41OiJ8ROOVEi8TKFhRUFlTIQllCJPzT6NCT3NTyfo=="
+  agent_id: "cpvra81a095"
