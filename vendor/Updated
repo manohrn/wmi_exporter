@@ -1,0 +1,190 @@
+import requests
+import yaml
+import time
+import logging
+import base64
+from colorama import Fore, Style
+
+# --- Setup Logging ---
+logging.basicConfig(
+    filename='agent_management_push.log',
+    filemode='a',
+    format='%(asctime)s | %(levelname)s | %(message)s',
+    level=logging.INFO
+)
+
+# --- Load config.yaml ---
+with open('config.yaml', 'r') as f:
+    config = yaml.safe_load(f)
+
+namespace_suffix = config['namespace_suffix']
+proxy = config['proxy']
+base_config = config['base_config']
+kafka_snippet = config['kafka_snippet']
+labels_template = config['labels_template']
+
+# --- Headers ---
+headers_json = {
+    "Accept": "application/x-json",
+    "Content-Type": "application/x-json"
+}
+headers_yaml = {
+    "Accept": "application/x-yaml",
+    "Content-Type": "application/x-yaml"
+}
+
+# --- Hardcoded Labels Payload ---
+labels_payload = {
+    "labels": {
+        "os": "linux",
+        "kafka_baseconfig": "id",
+        "environment": "dev",
+        "snippetype": "kafka_exporter"
+    },
+    "template_variables": {
+        "kafka_monitors": [
+            {
+                "job_name": "mano",
+                "target_name": "test_1",
+                "server_name": "process_1",
+                "env_name": "dev",
+                "component_name": "broker",
+                "component_id": "123",
+                "cert_path": "/opt/test",
+                "fqdn_name": "abc.com"
+            },
+            {
+                "job_name": "mano_1",
+                "target_name": "test",
+                "server_name": "process",
+                "env_name": "dev",
+                "component_name": "connect",
+                "connect_cluster_id": "123"
+            }
+        ]
+    }
+}
+
+# --- Utility: Retry-able PUT Request ---
+def put_with_retry(url, headers, data=None, json_data=None, proxies=None, verify=False, max_retries=3, timeout=10):
+    attempt = 0
+    while attempt < max_retries:
+        try:
+            response = requests.put(
+                url,
+                headers=headers,
+                data=data,
+                json=json_data,
+                proxies=proxies,
+                verify=verify,
+                timeout=timeout
+            )
+            if response.status_code in [200, 201, 204]:
+                return response
+            else:
+                print(f"{Fore.RED}Attempt {attempt+1}: HTTP {response.status_code}{Style.RESET_ALL}")
+                logging.error(f"Attempt {attempt+1}: HTTP {response.status_code} - {response.text}")
+        except Exception as e:
+            print(f"{Fore.RED}Attempt {attempt+1}: Exception occurred: {e}{Style.RESET_ALL}")
+            logging.error(f"Attempt {attempt+1}: Exception - {e}")
+        
+        attempt += 1
+        time.sleep(2)
+    return None
+
+# --- Push Base Config (raw text with manual Authorization) ---
+def push_base_config():
+    url = f"https://agent-management-dedicated-001.grafana.net/agent-management/api/config/v1/namespaces/KEES_{namespace_suffix}/base_config"
+
+    try:
+        # Read YAML file as raw text
+        with open(base_config['file'], 'r') as f:
+            payload = f.read()
+
+        # Manual Basic Auth Header
+        credentials = f"{base_config['instance_id']}:{base_config['agent_token']}"
+        encoded_credentials = base64.b64encode(credentials.encode()).decode()
+
+        headers_text_plain = {
+            "Authorization": f"Basic {encoded_credentials}",
+            "Content-Type": "text/plain"
+        }
+
+        response = put_with_retry(
+            url=url,
+            headers=headers_text_plain,
+            data=payload,
+            proxies=proxy,
+            verify=False
+        )
+
+        if response:
+            print(f"{Fore.GREEN}[Base Config] SUCCESS{Style.RESET_ALL}")
+            logging.info("[Base Config] Success")
+        else:
+            print(f"{Fore.RED}[Base Config] FAILED after retries{Style.RESET_ALL}")
+            logging.error("[Base Config] Failed after retries")
+    except Exception as e:
+        print(f"{Fore.RED}[Base Config] Error: {e}{Style.RESET_ALL}")
+        logging.error(f"[Base Config] Exception: {e}")
+
+# --- Push Kafka Snippet Config ---
+def push_kafka_snippet():
+    url = "https://agent-management-dedicated-001.grafana.net/agent-management/api/config/v1/namespaces/linux/snippets/linux_baseconfig"
+
+    try:
+        with open(kafka_snippet['file'], 'rb') as f:
+            file_data = f.read()
+
+        response = put_with_retry(
+            url=url,
+            headers=headers_yaml,
+            data=file_data,
+            proxies=proxy,
+            verify=False
+        )
+
+        if response:
+            print(f"{Fore.GREEN}[Kafka Snippet] SUCCESS{Style.RESET_ALL}")
+            logging.info("[Kafka Snippet] Success")
+        else:
+            print(f"{Fore.RED}[Kafka Snippet] FAILED after retries{Style.RESET_ALL}")
+            logging.error("[Kafka Snippet] Failed after retries")
+    except Exception as e:
+        print(f"{Fore.RED}[Kafka Snippet] Error: {e}{Style.RESET_ALL}")
+        logging.error(f"[Kafka Snippet] Exception: {e}")
+
+# --- Push Labels and Template Variables ---
+def push_labels_and_template_vars():
+    url = f"https://agent-management-dedicated-001.grafana.net/agent-management/api/labels/v1/agents/{labels_template['agent_id']}"
+
+    try:
+        response = put_with_retry(
+            url=url,
+            headers=headers_json,
+            json_data=labels_payload,
+            proxies=proxy,
+            verify=False,
+            timeout=10
+        )
+
+        if response:
+            print(f"{Fore.GREEN}[Labels and Template Vars] SUCCESS{Style.RESET_ALL}")
+            logging.info("[Labels and Template Vars] Success")
+        else:
+            print(f"{Fore.RED}[Labels and Template Vars] FAILED after retries{Style.RESET_ALL}")
+            logging.error("[Labels and Template Vars] Failed after retries")
+    except Exception as e:
+        print(f"{Fore.RED}[Labels and Template Vars] Error: {e}{Style.RESET_ALL}")
+        logging.error(f"[Labels and Template Vars] Exception: {e}")
+
+# --- Main Execution ---
+if __name__ == "__main__":
+    print(f"\n--- Pushing Base Config for namespace KEES_{namespace_suffix} ---")
+    push_base_config()
+
+    print(f"\n--- Pushing Kafka Snippet Config ---")
+    push_kafka_snippet()
+
+    print(f"\n--- Pushing Labels and Template Variables ---")
+    push_labels_and_template_vars()
