@@ -1,0 +1,17 @@
+def resolve_and_build(entry):
+    fqdn = get_fqdn_from_nslookup(entry["host"])
+    target = f"{fqdn}:{entry['port']}" if entry.get("port") else fqdn
+    return {
+        "labels": {
+            "enabled": entry.get("enabled", "TRUE"),
+            "frequency": str(entry.get("frequency", "600")),
+            "group": entry.get("group", ""),
+            "host": fqdn,
+            "module": "tcp_connect",
+            "name": entry.get("name", ""),
+            "port": str(entry.get("port", "")),
+            "timeout": str(entry.get("timeout", "60")),
+            "type": entry.get("type", "PortMonitor")
+        },
+        "targets": [target]
+    }
