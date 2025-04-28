@@ -1,0 +1,41 @@
+import yaml
+
+# --- Load config.yaml ---
+with open('config.yaml', 'r') as f:
+    config = yaml.safe_load(f)
+
+namespace_suffix = config['namespace_suffix']
+proxy = config['proxy']
+base_config = config['base_config']
+kafka_snippet = config['kafka_snippet']
+labels_template = config['labels_template']
+
+# --- Build URLs ---
+base_config_url = f"https://agent-management-dedicated-001.grafana.net/agent-management/api/v1/namespaces/KEES_{namespace_suffix}/base_config"
+
+kafka_snippet_url = "https://agent-management-dedicated-001.grafana.net/agent-management/api/v1/config/v1/namespaces/linux/snippets/linux_baseconfig"
+
+labels_url = f"https://agent-management-dedicated-001.grafana.net/agent-management/api/labels/v1/agents/{labels_template['agent_id']}"
+
+# --- Print Final Values ---
+print("\n--- DEBUG PRINT ---")
+
+print(f"\nBase Config Upload:")
+print(f"URL           : {base_config_url}")
+print(f"Instance ID   : {base_config['instance_id']}")
+print(f"Agent Token   : {base_config['agent_token']}")
+print(f"File          : {base_config['file']}")
+
+print(f"\nKafka Snippet Upload:")
+print(f"URL           : {kafka_snippet_url}")
+print(f"Instance ID   : {kafka_snippet['instance_id']}")
+print(f"Agent Token   : {kafka_snippet['agent_token']}")
+print(f"File          : {kafka_snippet['file']}")
+
+print(f"\nLabels and Template Variables Upload:")
+print(f"URL           : {labels_url}")
+print(f"Instance ID   : {labels_template['instance_id']}")
+print(f"Agent Token   : {labels_template['agent_token']}")
+print(f"Agent ID      : {labels_template['agent_id']}")
+
+print("\n--- END DEBUG ---\n")
