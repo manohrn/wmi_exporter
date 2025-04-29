@@ -1,1 +1,32 @@
 
+import ipaddress
+
+def extract_hostname(fqdn_or_ip):
+    try:
+        # If it's a valid IP, return as is
+        ipaddress.ip_address(fqdn_or_ip)
+        return fqdn_or_ip
+    except ValueError:
+        # It's a FQDN, so return only the hostname part
+        return fqdn_or_ip.split('.')[0].lower()
+
+def resolve_and_build(entry):
+    fqdn = get_fqdn_from_nslookup(entry["host"])
+    target = f"{fqdn}:{entry['port']}" if entry.get("port") else fqdn
+
+    return {
+        "labels": {
+            "frequency": str(entry.get("frequency", "600")).lower(),
+            "group": str(entry.get("group", "")).lower(),
+            "host": extract_hostname(fqdn),  # hostname or IP as per rule
+            "fqdn": fqdn.lower(),            # full FQDN retained separately
+            "module": "tcp_connect",
+            "name": str(entry.get("name", "")).lower(),
+            "port": str(entry.get("port", "")).lower(),
+            "timeout": str(entry.get("timeout", "60")).lower(),
+            "type": str(entry.get("type", "portmonitor")).lower(),
+            "app_id": str(entry.get("app_id", "unknown")).lower(),
+            "basemon": str(entry.get("basemon", "no")).lower()
+        },
+        "targets": [target]
+    }
