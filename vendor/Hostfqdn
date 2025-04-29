@@ -1,0 +1,16 @@
+def get_fqdn_from_nslookup(host):
+    try:
+        output = subprocess.check_output(['nslookup', host], text=True, stderr=subprocess.DEVNULL)
+        lines = output.strip().splitlines()
+
+        # For IP input: look for "Name:" or "name =" line
+        for line in lines:
+            if "name =" in line.lower():  # nslookup IP result
+                return line.split('=')[1].strip().lower()
+            if line.lower().startswith("name:"):  # nslookup hostname result
+                return line.split(":", 1)[1].strip().lower()
+
+        # Fallback
+        return host.lower()
+    except Exception:
+        return host.lower()
