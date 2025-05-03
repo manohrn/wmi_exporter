@@ -1,0 +1,104 @@
+import yaml
+import requests
+import csv
+from collections import Counter
+
+# ----------- CONFIGURATION ------------
+YAML_FILE = "blackbox_tcp.yaml"
+PROMETHEUS_URL = "https://prometheus-dedicated-14-prod-us-central-0.grafana.net/api/v1/query"
+PROMQL_QUERY = 'up{job="integrations/blackbox_tcp"}'
+OUTPUT_MISSING = "missing_targets.csv"
+
+PROXIES = {
+    "http": "http://your.proxy.server:8080",
+    "https": "http://your.proxy.server:8080"
+}
+VERIFY_SSL = False
+# --------------------------------------
+
+
+def extract_targets_from_yaml(yaml_file):
+    with open(yaml_file, "r") as f:
+        config = yaml.safe_load(f)
+
+    entries = []
+    for entry in config:
+        if isinstance(entry, dict) and 'targets' in entry and 'labels' in entry:
+            labels = entry['labels']
+            name = labels.get('name', '')
+            app_id = labels.get('app_id', '')
+            for target in entry['targets']:
+                entries.append({
+                    "instance": target,
+                    "name": name,
+                    "app_id": app_id
+                })
+    return entries
+
+
+def get_active_targets_from_prometheus(prom_url, promql, proxies, verify_ssl):
+    try:
+        response = requests.get(
+            prom_url,
+            params={"query": promql},
+            proxies=proxies,
+            timeout=30,
+            verify=verify_ssl
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        active = []
+        for result in data['data']['result']:
+            metric = result['metric']
+            instance = metric.get('instance', '')
+            app_id = metric.get('app_id', '')
+            active.append({
+                "instance": instance,
+                "app_id": app_id
+            })
+        return active
+
+    except requests.exceptions.RequestException as e:
+        print("Error querying Prometheus:", e)
+        return []
+
+
+def compare_and_export_missing(configured, active, output_file):
+    conf_counter = Counter((item['instance'], item['app_id']) for item in configured)
+    act_counter = Counter((item['instance'], item['app_id']) for item in active)
+
+    missing_rows = []
+
+    for row in configured:
+        key = (row['instance'], row['app_id'])
+        if conf_counter[key] > act_counter.get(key, 0):
+            missing_rows.append(row)
+            conf_counter[key] -= 1  # reduce count to account for duplicate
+
+    with open(output_file, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["instance", "app_id", "name"])
+        writer.writeheader()
+        for row in missing_rows:
+            writer.writerow(row)
+
+    print(f"Configured targets : {len(configured)}")
+    print(f"Active 'up' targets: {len(active)}")
+    print(f"Missing targets    : {len(missing_rows)}")
+    print(f"Saved to: {output_file}")
+
+
+def main():
+    print("Reading targets from YAML with instance, name, app_id...")
+    configured_targets = extract_targets_from_yaml(YAML_FILE)
+
+    print("Querying active targets from Prometheus (with instance, app_id)...")
+    active_targets = get_active_targets_from_prometheus(
+        PROMETHEUS_URL, PROMQL_QUERY, PROXIES, VERIFY_SSL
+    )
+
+    compare_and_export_missing(configured_targets, active_targets, OUTPUT_MISSING)
+
+
+if __name__ == "__main__":
+    main()
