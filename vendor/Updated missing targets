@@ -1,0 +1,75 @@
+import yaml
+import requests
+import csv
+
+# ----------- CONFIGURATION ------------
+YAML_FILE = "blackbox_tcp.yaml"  # Path to Alloy-fed YAML file
+PROMETHEUS_URL = "https://your-prometheus-server/api/v1/query"
+PROMQL_QUERY = 'up{job="blackbox_tcp"}'  # Adjust job label if needed
+OUTPUT_MISSING = "missing_targets.csv"
+
+# Proxy setup (update this to your environment)
+PROXIES = {
+    "http": "http://your.proxy.server:8080",
+    "https": "http://your.proxy.server:8080"
+}
+# --------------------------------------
+
+
+def extract_targets_from_yaml(yaml_file):
+    with open(yaml_file, "r") as f:
+        config = yaml.safe_load(f)
+
+    targets = []
+    for entry in config:
+        if isinstance(entry, dict) and 'targets' in entry:
+            targets.extend(entry['targets'])
+
+    return sorted(set(targets))
+
+
+def get_active_targets_from_prometheus(prom_url, promql, proxies):
+    response = requests.get(
+        prom_url,
+        params={"query": promql},
+        proxies=proxies,
+        timeout=30
+    )
+    response.raise_for_status()
+    data = response.json()
+
+    active_targets = []
+    for result in data['data']['result']:
+        instance = result['metric'].get('instance')
+        if instance:
+            active_targets.append(instance)
+
+    return sorted(set(active_targets))
+
+
+def write_to_csv(filepath, missing_targets):
+    with open(filepath, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["missing_target"])
+        for target in missing_targets:
+            writer.writerow([target])
+
+
+def main():
+    configured_targets = extract_targets_from_yaml(YAML_FILE)
+    active_targets = get_active_targets_from_prometheus(
+        PROMETHEUS_URL, PROMQL_QUERY, PROXIES
+    )
+
+    missing_targets = sorted(set(configured_targets) - set(active_targets))
+
+    print(f"Configured targets : {len(configured_targets)}")
+    print(f"Active 'up' targets: {len(active_targets)}")
+    print(f"Missing targets    : {len(missing_targets)}")
+
+    write_to_csv(OUTPUT_MISSING, missing_targets)
+    print(f"Results saved in: {OUTPUT_MISSING}")
+
+
+if __name__ == "__main__":
+    main()
