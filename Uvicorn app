@@ -1,0 +1,88 @@
+from fastapi import FastAPI
+from pydantic import BaseModel
+from typing import Dict
+import requests
+from requests.auth import HTTPBasicAuth
+from datetime import datetime, timedelta
+
+app = FastAPI()
+
+# -------------------------------
+# Grafana Cloud Mimir Setup
+# -------------------------------
+PROMETHEUS_URL = "https://<your-stack>.grafana.net/api/prom"  # Replace this
+PROM_USER = "<your-stack-id>"                                 # e.g., "123456"
+PROM_PASS = "<your-api-token>"                                # Grafana Cloud API token
+VERIFY_TLS = True                                             # For Grafana Cloud
+
+# Optional proxy (corporate or outbound)
+PROXIES = {
+    "http": "http://your-proxy:port",
+    "https": "http://your-proxy:port"
+}
+
+# -------------------------------
+# Input Model
+# -------------------------------
+class MetricRequest(BaseModel):
+    ci_name: str  # agent_hostname label
+
+# -------------------------------
+# Time Helpers
+# -------------------------------
+def now_rfc3339():
+    return datetime.utcnow().isoformat("T") + "Z"
+
+def thirty_minutes_ago_rfc3339():
+    return (datetime.utcnow() - timedelta(minutes=30)).isoformat("T") + "Z"
+
+# -------------------------------
+# PromQL Builder
+# -------------------------------
+def build_promql_queries(ci_name: str) -> Dict[str, str]:
+    return {
+        "cpu_usage": f'rate(node_cpu_seconds_total{{agent_hostname="{ci_name}", mode!="idle"}}[5m])',
+        "memory_usage": f'(1 - (node_memory_MemAvailable_bytes{{agent_hostname="{ci_name}"}} / node_memory_MemTotal_bytes{{agent_hostname="{ci_name}"}}))',
+        "network_rx": f'rate(node_network_receive_bytes_total{{agent_hostname="{ci_name}"}}[5m])',
+        "network_tx": f'rate(node_network_transmit_bytes_total{{agent_hostname="{ci_name}"}}[5m])'
+    }
+
+# -------------------------------
+# Prometheus Range Query
+# -------------------------------
+def query_range(promql: str) -> dict:
+    try:
+        params = {
+            "query": promql,
+            "start": thirty_minutes_ago_rfc3339(),
+            "end": now_rfc3339(),
+            "step": "300"
+        }
+        response = requests.get(
+            f"{PROMETHEUS_URL}/api/v1/query_range",
+            params=params,
+            auth=HTTPBasicAuth(PROM_USER, PROM_PASS),
+            proxies=PROXIES,
+            verify=VERIFY_TLS,
+            timeout=10
+        )
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        return {"error": str(e)}
+
+# -------------------------------
+# API Endpoint
+# -------------------------------
+@app.post("/metrics")
+async def get_metrics(req: MetricRequest):
+    promqls = build_promql_queries(req.ci_name)
+    results = {}
+
+    for metric, promql in promqls.items():
+        results[metric] = query_range(promql)
+
+    return {
+        "ci_name": req.ci_name,
+        "metrics": results
+    }
