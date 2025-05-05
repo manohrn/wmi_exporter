@@ -1,0 +1,4 @@
+import requests
+
+resp = requests.post("http://localhost:8000/metrics", json={"ci_name": "infra-k8s-node-1"})
+print(resp.json())
