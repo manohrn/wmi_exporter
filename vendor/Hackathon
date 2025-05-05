@@ -1,0 +1,68 @@
+from fastapi import FastAPI
+from pydantic import BaseModel
+import requests
+from requests.auth import HTTPBasicAuth
+from vertexai.preview.language_models import ChatModel
+
+# -------------------------
+# Init FastAPI app
+# -------------------------
+app = FastAPI()
+
+# -------------------------
+# Prometheus credentials
+# -------------------------
+PROMETHEUS_URL = "https://your-prometheus-url:9090"  # Replace with actual Prometheus URL
+PROM_USER = "your_username"
+PROM_PASS = "your_password"
+VERIFY_TLS = False  # Set to False to skip TLS cert check (e.g., self-signed)
+
+# -------------------------
+# Gemini Flash Model Setup
+# -------------------------
+chat_model = ChatModel.from_pretrained("gemini-1.5-flash")
+
+# -------------------------
+# Data Models
+# -------------------------
+class QueryRequest(BaseModel):
+    user_query: str
+
+class PromQLResponse(BaseModel):
+    promql: str
+    result: dict
+
+# -------------------------
+# LLM Translation Function
+# -------------------------
+def llm_translate_to_promql(nl_query: str) -> str:
+    prompt = f"""You are a PromQL expert. Convert the following natural language request to PromQL:\n\n"{nl_query}"\n\nPromQL:"""
+    chat = chat_model.start_chat()
+    response = chat.send_message(prompt)
+    return response.text.strip()
+
+# -------------------------
+# Prometheus Query Function
+# -------------------------
+def query_prometheus(promql: str) -> dict:
+    try:
+        response = requests.get(
+            f"{PROMETHEUS_URL}/api/v1/query",
+            params={"query": promql},
+            auth=HTTPBasicAuth(PROM_USER, PROM_PASS),
+            verify=VERIFY_TLS,
+            timeout=10
+        )
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        return {"error": str(e)}
+
+# -------------------------
+# API Endpoint
+# -------------------------
+@app.post("/query", response_model=PromQLResponse)
+async def query_handler(req: QueryRequest):
+    promql = llm_translate_to_promql(req.user_query)
+    result = query_prometheus(promql)
+    return PromQLResponse(promql=promql, result=result)
