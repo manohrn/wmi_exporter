@@ -1,0 +1,132 @@
+import requests
+import sys
+import os
+import json
+
+# -------------------------
+# Input and Config
+# -------------------------
+API_TOKEN = os.getenv("TE_API_TOKEN")
+SERVER_NAME = sys.argv[1] if len(sys.argv) > 1 else None
+BASE_URL = "https://api.thousandeyes.com/v6"
+headers = {"Accept": "application/json"}
+
+if not API_TOKEN or not SERVER_NAME:
+    print("Usage: TE_API_TOKEN=your_token python3 te_server_status_json.py <server-name>")
+    sys.exit(1)
+
+
+# -------------------------
+# API Calls
+# -------------------------
+def get_account_groups():
+    url = f"{BASE_URL}/account-groups.json"
+    response = requests.get(url, auth=(API_TOKEN, 'x'), headers=headers)
+    response.raise_for_status()
+    return response.json().get("accountGroups", [])
+
+
+def get_agents(account_group_id):
+    url = f"{BASE_URL}/agents.json?accountGroupId={account_group_id}"
+    response = requests.get(url, auth=(API_TOKEN, 'x'), headers=headers)
+    response.raise_for_status()
+    return response.json().get("agents", [])
+
+
+def get_tests(account_group_id):
+    url = f"{BASE_URL}/tests.json?accountGroupId={account_group_id}"
+    response = requests.get(url, auth=(API_TOKEN, 'x'), headers=headers)
+    response.raise_for_status()
+    return response.json().get("test", [])
+
+
+def get_results(test_id, agent_id, account_group_id):
+    url = f"{BASE_URL}/tests/{test_id}/results.json?agentId={agent_id}&accountGroupId={account_group_id}"
+    response = requests.get(url, auth=(API_TOKEN, 'x'), headers=headers)
+    response.raise_for_status()
+    return response.json().get("results", [])
+
+
+# -------------------------
+# Core Logic
+# -------------------------
+def main():
+    account_groups = get_account_groups()
+    all_results = []
+
+    for ag in account_groups:
+        ag_id = ag["accountGroupId"]
+        ag_name = ag["accountGroupName"]
+
+        try:
+            agents = get_agents(ag_id)
+        except Exception as e:
+            print(f"[{ag_name}] Failed to fetch agents: {e}")
+            continue
+
+        matched_agent = next(
+            (a for a in agents if SERVER_NAME.lower() in (a.get("hostname") or "").lower()), None
+        )
+
+        if not matched_agent:
+            continue
+
+        agent_id = matched_agent["agentId"]
+        agent_name = matched_agent["agentName"]
+        print(f"\nFound server '{SERVER_NAME}' as agent '{agent_name}' (ID: {agent_id}) in account group '{ag_name}'")
+
+        try:
+            tests = get_tests(ag_id)
+        except Exception as e:
+            print(f"Failed to fetch tests for account group {ag_id}: {e}")
+            continue
+
+        for test in tests:
+            test_id = test["testId"]
+            test_name = test["testName"]
+
+            try:
+                results = get_results(test_id, agent_id, ag_id)
+                for result in results:
+                    for agent in result.get("agents", []):
+                        if agent["agentId"] == agent_id:
+                            test_result = {
+                                "account_group": ag_name,
+                                "test_id": test_id,
+                                "test_name": test_name,
+                                "status": agent.get("errorType", "OK"),
+                                "latency_ms": agent.get("avgLatency", None),
+                                "packet_loss_percent": agent.get("packetLoss", None),
+                                "timestamp": result.get("date", None)
+                            }
+                            all_results.append(test_result)
+                            print(f"  [Test: {test_name}] Status: {test_result['status']}, "
+                                  f"Latency: {test_result['latency_ms']} ms, "
+                                  f"Packet Loss: {test_result['packet_loss_percent']}%")
+            except requests.HTTPError as e:
+                print(f"  Failed to fetch results for test '{test_name}' (ID {test_id}): {e}")
+        break
+
+    if not all_results:
+        print(f"\nNo matching agent found for server name: {SERVER_NAME}")
+    else:
+        output_file = f"te_results_{SERVER_NAME.replace('.', '_')}.json"
+        with open(output_file, "w") as f:
+            json.dump(all_results, f, indent=2)
+        print(f"\nResults written to: {output_file}")
+
+
+# -------------------------
+# Entry Point
+# -------------------------
+if __name__ == "__main__":
+    main()
+
+
+
+how tk use
+export TE_API_TOKEN="your_token"
+python3 te_server_status_json.py my-server-name.acme.com
+
+json output
+te_results_my-server-name_acme_com.json
