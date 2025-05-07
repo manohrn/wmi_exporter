@@ -2,8 +2,11 @@ config:
   integrations:
     process_exporter:
       process_names:
-{{- $envs := (ds "data").kafka_monitors | uniq "env_name" | pluck "env_name" }}
-{{- range $i, $env := $envs }}
+{{- $seen := dict }}
+{{- range $i, $m := (ds "data").kafka_monitors }}
+  {{- $env := printf "%s" $m.env_name }}
+  {{- if not (hasKey $seen $env) }}
+    {{- $_ := set $seen $env true }}
         - name: "kafka-broker-{{ $env }}"
           cmdline:
             - ".*kafka.Kafka.*"
@@ -23,6 +26,7 @@ config:
           cmdline:
             - ".*controlcenter.ControlCenter.*"
           recheck_on_scrape: true
+  {{- end }}
 {{- end }}
 
 {{- range $i, $m := (ds "data").kafka_monitors }}
