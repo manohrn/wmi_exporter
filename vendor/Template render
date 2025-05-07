@@ -1,3 +1,4 @@
+
 #!/bin/bash
 
 export CONTEXT='
@@ -22,9 +23,12 @@ echo DATA
 echo "$CONTEXT"
 echo /DATA
 
-# Run gomplate with the correct datasource name
+# Write context to temp file (this avoids quoting issues)
+echo "$CONTEXT" > /tmp/context.yaml
+
+# Then run gomplate with file-based context
 ./gomplate.exe \
-  --context "data=$CONTEXT|type=application/yaml" \
+  --context "data=/tmp/context.yaml" \
   -f kafka_config.yaml.tmpl
 
 echo /RENDERED TEMPLATE
