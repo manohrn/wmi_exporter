@@ -1,0 +1,92 @@
+import os
+import json
+import time
+import httpx
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+TOKEN = os.getenv("TE_API_TOKEN")
+BASE_URL = os.getenv("TE_API_BASE_URL", "https://api.thousandeyes.com/v6")
+AID = os.getenv("TE_ACCOUNT_ID", "133")
+HTTP_PROXY = os.getenv("HTTP_PROXY")
+HTTPS_PROXY = os.getenv("HTTPS_PROXY")
+
+# Set proxy environment variables if available
+if HTTP_PROXY:
+    os.environ["HTTP_PROXY"] = HTTP_PROXY
+if HTTPS_PROXY:
+    os.environ["HTTPS_PROXY"] = HTTPS_PROXY
+
+# Common request headers
+headers = {
+    "Authorization": f"Bearer {TOKEN}"
+}
+
+def log(msg):
+    print(f"[INFO] {msg}")
+
+# Step 2: Fetch all label groups
+def fetch_labels(aid):
+    url = f"{BASE_URL}/groups?aid={aid}&format=json"
+    log(f"[STEP 2] Fetching labels for AID={aid}")
+    try:
+        with httpx.Client(timeout=15) as client:
+            response = client.get(url, headers=headers)
+            log(f"[OK] {url} - {len(response.text)} chars")
+            data = response.json()
+            return data.get("groups", [])
+    except Exception as e:
+        log(f"[ERROR] {e}")
+        return []
+
+# Step 3: Extract only labels with distributed_app_ids
+def extract_distributed_app_ids(labels):
+    matched = []
+    for label in labels:
+        name = label.get("name", "").lower()
+        if "distributed_app_ids:" in name:
+            matched.append({
+                "groupId": label.get("groupId"),
+                "name": label.get("name")
+            })
+    log(f"[STEP 3] Found {len(matched)} distributed_app_ids labels")
+    return matched
+
+# Step 4 & 5: Fetch all test results for each group
+def fetch_all_tests_for_group(group_id, aid):
+    url = f"{BASE_URL}/groups/{group_id}?aid={aid}&format=json"
+    try:
+        with httpx.Client(timeout=15) as client:
+            response = client.get(url, headers=headers)
+            data = response.json()
+            groups = data.get("groups", [])
+            if groups and isinstance(groups[0], dict):
+                return groups[0].get("tests", [])
+            return []
+    except Exception as e:
+        log(f"[ERROR] Fetching tests for group {group_id}: {e}")
+        return []
+
+# Main pipeline
+def main():
+    start = time.time()
+    labels = fetch_labels(AID)
+    distributed_labels = extract_distributed_app_ids(labels)
+
+    all_results = []
+    for label in distributed_labels:
+        log(f"[STEP 4] Getting tests for: {label['name']}")
+        results = fetch_all_tests_for_group(label["groupId"], AID)
+        all_results.extend(results)
+        log(f"[STEP 5] {len(results)} tests fetched for group ID {label['groupId']}")
+
+    # Save results
+    with open("final_test_results.json", "w") as f:
+        json.dump({"tests": all_results}, f, indent=2)
+
+    log(f"[FINAL] Total tests saved: {len(all_results)}")
+    log(f"[DONE] Completed in {round(time.time() - start, 2)} seconds")
+
+if __name__ == "__main__":
+    main()
