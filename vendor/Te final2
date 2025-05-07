@@ -1,0 +1,133 @@
+import os
+import time
+import datetime
+import logging
+import requests
+
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from typing import List, Optional, Dict, Any
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+TE_API_TOKEN = os.getenv("TE_API_TOKEN")
+TE_API_BASE_URL = os.getenv("TE_API_BASE_URL", "https://api.thousandeyes.com/v6")
+RATE_LIMIT_BUFFER = int(os.getenv("RATE_LIMIT_BUFFER", "5"))
+
+# Proxy settings
+proxies = {}
+http_proxy = os.getenv("HTTP_PROXY") or os.getenv("http_proxy")
+https_proxy = os.getenv("HTTPS_PROXY") or os.getenv("https_proxy")
+if http_proxy:
+    proxies["http"] = http_proxy
+if https_proxy:
+    proxies["https"] = https_proxy
+
+# Logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logger = logging.getLogger(__name__)
+
+# API retry logic
+def call_api(method: str, url: str, headers: Dict[str, str], payload: Optional[Any] = None) -> Optional[Dict]:
+    retries = 3
+    for attempt in range(retries):
+        try:
+            response = requests.request(method, url, headers=headers, json=payload, proxies=proxies, timeout=15)
+            if response.status_code == 200:
+                return response.json()
+            elif response.status_code == 429:
+                logger.warning(f"Rate limited. Waiting before retry...")
+                time.sleep(5)
+            elif response.status_code == 401:
+                logger.error(f"Unauthorized access. Check your TE_API_TOKEN.")
+                return None
+            else:
+                logger.error(f"Error {response.status_code}: {response.text}")
+        except Exception as e:
+            logger.error(f"Exception calling {url}: {e}")
+        time.sleep(3)
+    return None
+
+# FastAPI app
+app = FastAPI(title="ThousandEyes Test Result API")
+
+# Output model
+class TestResult(BaseModel):
+    testId: int
+    testName: str
+    testType: str
+    latestResult: Optional[Dict[str, Any]]
+
+@app.get("/test-results/{app_id}", response_model=List[TestResult])
+async def get_test_results(app_id: str):
+    if not TE_API_TOKEN:
+        raise HTTPException(status_code=401, detail="TE_API_TOKEN missing")
+
+    headers = {
+        "Authorization": f"Bearer {TE_API_TOKEN}",
+        "Content-Type": "application/json"
+    }
+
+    # Step 1: Get all account groups
+    ag_url = f"{TE_API_BASE_URL}/account-groups"
+    ag_resp = call_api("GET", ag_url, headers)
+    if not ag_resp or "accountGroups" not in ag_resp:
+        raise HTTPException(status_code=502, detail="Failed to fetch account groups")
+
+    matching_aids = []
+    for group in ag_resp["accountGroups"]:
+        aid = group.get("aid")
+        if not aid:
+            continue
+        label_url = f"{TE_API_BASE_URL}/groups.json?aid={aid}"
+        label_data = call_api("GET", label_url, headers)
+        if not label_data:
+            continue
+        for label in label_data.get("groups", []):
+            if f"distributed_app_ids:{app_id}" in label.get("name", ""):
+                matching_aids.append(aid)
+                break
+
+    if not matching_aids:
+        raise HTTPException(status_code=404, detail=f"No matching app_id labels found for: {app_id}")
+
+    # Step 2: Fetch test results for each aid
+    allowed_tests = {
+        "agentToServerTests": ("agent-to-server", "/tests/agent-to-server"),
+        "httpServerTests": ("http-server", "/tests/http-server"),
+        "pageLoadTests": ("page-load", "/tests/page-load"),
+        "webTransactionTests": ("web-transactions", "/tests/web-transactions")
+    }
+
+    results: List[TestResult] = []
+    for aid in matching_aids:
+        test_url = f"{TE_API_BASE_URL}/tests?aid={aid}"
+        test_data = call_api("GET", test_url, headers)
+        if not test_data:
+            continue
+        for key, (type_name, endpoint) in allowed_tests.items():
+            for test in test_data.get(key, []):
+                test_id = test.get("testId")
+                test_name = test.get("testName")
+                if not test_id or not test_name:
+                    continue
+                result_url = f"{TE_API_BASE_URL}{endpoint}/{test_id}/results?aid={aid}"
+                result_data = call_api("GET", result_url, headers)
+                latest = None
+                try:
+                    res_list = result_data.get("results", []) if result_data else []
+                    if res_list:
+                        latest = max(res_list, key=lambda r: r.get("endTime", ""))
+                except Exception as e:
+                    logger.warning(f"Error processing test result for test {test_id}: {e}")
+                results.append(TestResult(
+                    testId=test_id,
+                    testName=test_name,
+                    testType=type_name,
+                    latestResult=latest
+                ))
+
+    if not results:
+        raise HTTPException(status_code=404, detail=f"No test results found for app_id: {app_id}")
+    return results
