@@ -1,0 +1,83 @@
+import os
+import httpx
+import json
+from datetime import datetime, timedelta
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+token = os.getenv("TE_API_TOKEN")
+base_url = os.getenv("TE_API_BASE_URL", "https://api.thousandeyes.com/v6")
+http_proxy = os.getenv("HTTP_PROXY") or os.getenv("http_proxy")
+https_proxy = os.getenv("HTTPS_PROXY") or os.getenv("https_proxy")
+aid = "172062"  # Replace with your AID
+
+# Configure environment for proxies
+if http_proxy:
+    os.environ["HTTP_PROXY"] = http_proxy
+if https_proxy:
+    os.environ["HTTPS_PROXY"] = https_proxy
+
+headers = {
+    "Authorization": f"Bearer {token}"
+}
+
+allowed_types = {
+    "agent-to-server": "agentToServerTests",
+    "http-server": "httpServerTests",
+    "page-load": "pageLoadTests",
+    "web-transactions": "webTransactionTests"
+}
+
+results = []
+
+try:
+    with httpx.Client(timeout=30) as client:
+        # Step 2: Fetch all label groups for the AID
+        label_url = f"{base_url}/groups.json?aid={aid}"
+        label_res = client.get(label_url, headers=headers)
+        labels = label_res.json().get("groups", [])
+
+        # Step 3: Filter for labels that contain 'distributed_app_ids:'
+        filtered = [g for g in labels if "distributed_app_ids:" in g.get("name", "")]
+
+        # Step 4 & 5: Fetch tests and then metrics for each test type
+        for label in filtered:
+            label_id = label["groupId"]
+            group_name = label["name"]
+
+            test_url = f"{base_url}/groups/{label_id}.json?aid={aid}&format=json"
+            test_res = client.get(test_url, headers=headers)
+            test_json = test_res.json()
+
+            for type_key, json_key in allowed_types.items():
+                tests = test_json.get(json_key, [])
+                for test in tests:
+                    test_id = test.get("testId")
+                    test_name = test.get("testName")
+                    if test_id and test_name:
+                        end_time = datetime.utcnow()
+                        start_time = end_time - timedelta(minutes=30)
+                        metrics_url = (
+                            f"{base_url}/tests/{type_key}/{test_id}/metrics.json"
+                            f"?aid={aid}&start={start_time.isoformat()}Z&end={end_time.isoformat()}Z"
+                        )
+                        metrics_res = client.get(metrics_url, headers=headers)
+                        metrics = metrics_res.json().get("metrics", [])
+
+                        results.append({
+                            "testId": test_id,
+                            "testName": test_name,
+                            "testType": type_key,
+                            "label": group_name,
+                            "metrics": metrics
+                        })
+
+    # Save all results to a JSON file
+    with open("test_results_with_metrics.json", "w") as f:
+        json.dump(results, f, indent=2)
+
+    print("Test metrics written to test_results_with_metrics.json")
+
+except Exception as e:
+    print(f"Script failed: {str(e)}")
