@@ -2,27 +2,24 @@ config:
   integrations:
     process_exporter:
       process_names:
-{{- $seen := dict }}
 {{- range $i, $m := (ds "data").kafka_monitors }}
-  {{- $env := printf "%s" $m.env_name }}
-  {{- if not (hasKey $seen $env) }}
-    {{- $_ := set $seen $env true }}
-        - name: "kafka-broker-{{ $env }}"
+  {{- if eq $m.component_name "broker" }}
+        - name: "kafka-broker-{{ $m.env_name }}"
           cmdline:
             - ".*kafka.Kafka.*"
-        - name: "kafka-zookeeper-{{ $env }}"
+        - name: "kafka-zookeeper-{{ $m.env_name }}"
           cmdline:
             - ".*quorum.QuorumPeerMain.*"
-        - name: "kafka-connect-{{ $env }}"
+        - name: "kafka-connect-{{ $m.env_name }}"
           cmdline:
             - ".*kafka.connect.*"
-        - name: "kafka-rest-{{ $env }}"
+        - name: "kafka-rest-{{ $m.env_name }}"
           cmdline:
             - ".*kafka.rest.*"
-        - name: "kafka-schemaregistry-{{ $env }}"
+        - name: "kafka-schemaregistry-{{ $m.env_name }}"
           cmdline:
             - ".*kafka.schemaregistry.*"
-        - name: "kafka-controlcenter-{{ $env }}"
+        - name: "kafka-controlcenter-{{ $m.env_name }}"
           cmdline:
             - ".*controlcenter.ControlCenter.*"
           recheck_on_scrape: true
