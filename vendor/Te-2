@@ -1,0 +1,35 @@
+import os
+import httpx
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+email = os.getenv("TE_EMAIL")              # e.g. your_email@domain.com
+token = os.getenv("TE_API_TOKEN")          # e.g. API token
+base_url = os.getenv("TE_API_BASE_URL", "https://api.thousandeyes.com/v6")
+
+http_proxy = os.getenv("HTTP_PROXY") or os.getenv("http_proxy")
+https_proxy = os.getenv("HTTPS_PROXY") or os.getenv("https_proxy")
+
+# Build proxies dict if set
+proxies = {}
+if http_proxy:
+    proxies["http://"] = http_proxy
+if https_proxy:
+    proxies["https://"] = https_proxy
+
+# Basic Auth using email:token
+auth = (email, token)
+
+# Endpoint to call
+url = f"{base_url}/account-groups.json"
+
+# Execute request with basic auth and proxy
+try:
+    with httpx.Client(proxies=proxies, timeout=15) as client:
+        response = client.get(url, auth=auth)
+        print("Status:", response.status_code)
+        print("Response:", response.text[:500])
+except Exception as e:
+    print("Error:", str(e))
