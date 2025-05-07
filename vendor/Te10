@@ -1,0 +1,100 @@
+import os
+import httpx
+import json
+from datetime import datetime, timezone
+from dotenv import load_dotenv
+import asyncio
+
+# Load env vars
+load_dotenv()
+TE_API_TOKEN = os.getenv("TE_API_TOKEN")
+BASE_URL = os.getenv("TE_API_BASE_URL", "https://api.thousandeyes.com/v6")
+AID = "172062"  # Use the known AID
+
+HEADERS = {
+    "Authorization": f"Bearer {TE_API_TOKEN}",
+    "Content-Type": "application/json"
+}
+
+# Get all groups for the given AID
+async def get_label_groups(client):
+    url = f"{BASE_URL}/groups.json?aid={AID}"
+    response = await client.get(url, headers=HEADERS)
+    response.raise_for_status()
+    return response.json().get("groups", [])
+
+# Parse out app IDs from group names
+def extract_app_ids(groups):
+    app_ids = []
+    for g in groups:
+        name = g.get("name", "")
+        if "distributed_app_ids:" in name:
+            app_ids.append(name.split("distributed_app_ids:")[1].strip())
+    return app_ids
+
+# Get all tests for this AID
+async def get_tests(client):
+    url = f"{BASE_URL}/tests.json?aid={AID}"
+    response = await client.get(url, headers=HEADERS)
+    response.raise_for_status()
+    return response.json()
+
+# Get results for allowed test types filtered by app_id
+async def get_test_results(client, tests, app_ids):
+    allowed_types = {
+        "agentToServerTests": "agent-to-server",
+        "httpServerTests": "http-server",
+        "pageLoadTests": "page-load",
+        "webTransactionTests": "web-transactions"
+    }
+
+    results = []
+    for test_type_key, endpoint in allowed_types.items():
+        for test in tests.get(test_type_key, []):
+            test_id = test.get("testId")
+            test_name = test.get("testName", "")
+            if not test_id or not any(app_id in test_name for app_id in app_ids):
+                continue
+
+            result_url = f"{BASE_URL}/tests/{endpoint}/{test_id}/results.json?aid={AID}"
+            res = await client.get(result_url, headers=HEADERS)
+            res.raise_for_status()
+            result_json = res.json()
+
+            results.append({
+                "testId": test_id,
+                "testName": test_name,
+                "testType": endpoint,
+                "latestResult": result_json.get("results", [])
+            })
+    return results
+
+# Main logic
+async def run():
+    start = datetime.now(timezone.utc)
+    async with httpx.AsyncClient(timeout=30) as client:
+        groups = await get_label_groups(client)
+        app_ids = extract_app_ids(groups)
+        print(f"App IDs found: {app_ids}")
+
+        tests = await get_tests(client)
+        results = await get_test_results(client, tests, app_ids)
+
+        output = {
+            "timestamp": start.isoformat(),
+            "aid": AID,
+            "app_ids": app_ids,
+            "test_results": results
+        }
+
+        with open("test_results.json", "w") as f:
+            json.dump(output, f, indent=2)
+
+        print("Test results written to test_results.json")
+
+# Compatible with environments that already run an event loop
+try:
+    asyncio.run(run())
+except RuntimeError:
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(run())
