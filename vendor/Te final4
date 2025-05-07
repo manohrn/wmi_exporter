@@ -1,0 +1,98 @@
+import os, time, json, asyncio
+from typing import List, Optional, Dict, Any
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from dotenv import load_dotenv
+import httpx
+
+load_dotenv()
+TE_API_TOKEN = os.getenv("TE_API_TOKEN")
+TE_API_BASE_URL = os.getenv("TE_API_BASE_URL", "https://api.thousandeyes.com/v6")
+RATE_LIMIT_BUFFER = int(os.getenv("RATE_LIMIT_BUFFER", "5"))
+
+HEADERS = {
+    "Authorization": f"Bearer {TE_API_TOKEN}",
+    "Content-Type": "application/json"
+}
+
+app = FastAPI(title="ThousandEyes AppID Test Results API")
+
+class TestResult(BaseModel):
+    testId: int
+    testName: str
+    testType: str
+    latestResult: Optional[Dict[str, Any]] = {}
+
+async def call_api(client: httpx.AsyncClient, url: str) -> Dict[str, Any]:
+    retries = 3
+    for attempt in range(retries):
+        try:
+            response = await client.get(url, headers=HEADERS, timeout=15)
+            if response.status_code == 200:
+                return response.json()
+            elif response.status_code == 429:
+                reset = int(response.headers.get("x-organization-rate-limit-reset", time.time() + 60))
+                sleep_time = max(reset - time.time() + RATE_LIMIT_BUFFER, 1)
+                await asyncio.sleep(sleep_time)
+            elif response.status_code >= 500:
+                await asyncio.sleep(2)
+            else:
+                return {}
+        except Exception:
+            await asyncio.sleep(2)
+    return {}
+
+@app.get("/test-results/{app_id}", response_model=List[TestResult])
+async def get_test_results(app_id: str):
+    if not TE_API_TOKEN:
+        raise HTTPException(status_code=500, detail="Missing API Token")
+
+    start_time = time.time()
+    async with httpx.AsyncClient() as client:
+        # Step 1: Get all account groups
+        acct_resp = await call_api(client, f"{TE_API_BASE_URL}/account-groups")
+        account_groups = acct_resp.get("accountGroups", [])
+        if not account_groups:
+            raise HTTPException(status_code=502, detail="Failed to fetch account groups")
+
+        # Step 2: Fetch label groups
+        label_tasks = [call_api(client, f"{TE_API_BASE_URL}/groups.json?aid={group['aid']}") for group in account_groups]
+        label_responses = await asyncio.gather(*label_tasks)
+
+        # Step 3: Match distributed_app_ids label
+        matching_aids = []
+        for group, label_data in zip(account_groups, label_responses):
+            for label in label_data.get("groups", []):
+                if f"distributed_app_ids:{app_id}" in label.get("name", ""):
+                    matching_aids.append(group["aid"])
+                    break
+        if not matching_aids:
+            raise HTTPException(status_code=404, detail=f"No labels matched for app_id: {app_id}")
+
+        # Step 4: Collect test results
+        test_types = {
+            "agentToServerTests": ("agent-to-server", "/tests/agent-to-server"),
+            "httpServerTests": ("http-server", "/tests/http-server"),
+            "pageLoadTests": ("page-load", "/tests/page-load"),
+            "webTransactionTests": ("web-transactions", "/tests/web-transactions")
+        }
+
+        results: List[TestResult] = []
+        for aid in matching_aids:
+            tests_resp = await call_api(client, f"{TE_API_BASE_URL}/tests?aid={aid}")
+            for key, (type_name, endpoint) in test_types.items():
+                for test in tests_resp.get(key, []):
+                    test_id = test.get("testId")
+                    test_name = test.get("testName")
+                    if not test_id:
+                        continue
+                    result_url = f"{TE_API_BASE_URL}{endpoint}/{test_id}/results?aid={aid}"
+                    result_data = await call_api(client, result_url)
+                    latest = max(result_data.get("results", []), key=lambda r: r.get("endTime", ""), default={})
+                    results.append(TestResult(testId=test_id, testName=test_name, testType=type_name, latestResult=latest))
+
+    with open("te_results.json", "w") as f:
+        json.dump([r.dict() for r in results], f, indent=2)
+
+    print(f"Total {len(results)} results fetched in {time.time() - start_time:.2f}s")
+    return results
