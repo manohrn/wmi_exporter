@@ -1,0 +1,16 @@
+kafka_monitors:
+  - cert_path: /opt/test
+    component_id: "123"
+    component_name: broker
+    env_name: dev101
+    fqdn_name: abc.com
+    job_name: mano
+    server_name: process_1
+    target_name: test_1
+
+  - component_name: connect
+    connect_cluster_id: 123
+    env_name: dev101
+    job_name: mano_1
+    server_name: process
+    target_name: test
