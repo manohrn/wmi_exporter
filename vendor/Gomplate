@@ -1,0 +1,9 @@
+process_names:
+{{- range (ds "data").kafka_monitors | uniq "env_name" }}
+  - name: "kafka-broker-{{ .env_name }}"
+    cmdline:
+      - ".*kafka.kafka.*{{ .env_name }}.*"
+  - name: "kafka-connect-{{ .env_name }}"
+    cmdline:
+      - ".*kafka.connect.*{{ .env_name }}.*"
+{{- end }}
