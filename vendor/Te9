@@ -1,0 +1,101 @@
+import os
+import httpx
+import time
+from datetime import datetime, timedelta
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+TE_API_TOKEN = os.getenv("TE_API_TOKEN")
+TE_API_BASE_URL = os.getenv("TE_API_BASE_URL", "https://api.thousandeyes.com/v6")
+APP_ID = "MCAP"  # Replace with your desired app_id
+AID = "172062"   # Hardcoded for now as per your request
+
+# Configure headers
+headers = {
+    "Authorization": f"Bearer {TE_API_TOKEN}",
+    "Content-Type": "application/json"
+}
+
+# Optional proxy support via environment variables
+http_proxy = os.getenv("HTTP_PROXY") or os.getenv("http_proxy")
+https_proxy = os.getenv("HTTPS_PROXY") or os.getenv("https_proxy")
+proxies = {}
+if http_proxy: proxies["http://"] = http_proxy
+if https_proxy: proxies["https://"] = https_proxy
+
+# Create httpx client
+client = httpx.Client(timeout=15, proxies=proxies if proxies else None)
+
+def fetch_labels_for_aid(aid):
+    url = f"{TE_API_BASE_URL}/groups.json?aid={aid}"
+    res = client.get(url, headers=headers)
+    if res.status_code == 200:
+        return res.json().get("groups", [])
+    print(f"[ERROR] Failed to fetch labels for aid={aid}")
+    return []
+
+def find_label_ids_with_app_id(labels, app_id):
+    matching = []
+    for label in labels:
+        name = label.get("name", "")
+        if f"distributed_app_ids:{app_id}" in name:
+            matching.append(label.get("groupId"))
+    return matching
+
+def fetch_tests_for_label(aid, label_id):
+    url = f"{TE_API_BASE_URL}/groups/{label_id}?aid={aid}&format=json"
+    res = client.get(url, headers=headers)
+    if res.status_code == 200:
+        return res.json().get("testIds", [])
+    print(f"[ERROR] Failed to fetch tests for label {label_id}")
+    return []
+
+def fetch_test_details(aid):
+    url = f"{TE_API_BASE_URL}/tests.json?aid={aid}"
+    res = client.get(url, headers=headers)
+    return res.json() if res.status_code == 200 else {}
+
+def fetch_metrics(aid, test_type, test_id):
+    url = f"{TE_API_BASE_URL}/tests/{test_type}/{test_id}/results.json?aid={aid}"
+    res = client.get(url, headers=headers)
+    if res.status_code == 200:
+        results = res.json().get("results", [])
+        cutoff = datetime.utcnow() - timedelta(minutes=30)
+        return [r for r in results if datetime.strptime(r.get("endTime", ""), "%Y-%m-%dT%H:%M:%SZ") >= cutoff]
+    return []
+
+def main():
+    print("Fetching labels...")
+    labels = fetch_labels_for_aid(AID)
+    matched_labels = find_label_ids_with_app_id(labels, APP_ID)
+    if not matched_labels:
+        print(f"No labels found with distributed_app_ids:{APP_ID}")
+        return
+
+    print(f"Matched label IDs: {matched_labels}")
+    test_ids = []
+    for label_id in matched_labels:
+        test_ids += fetch_tests_for_label(AID, label_id)
+
+    print(f"Test IDs found: {test_ids}")
+    all_tests = fetch_test_details(AID)
+    
+    # Allowed test types
+    allowed = {
+        "agentToServerTests": "agent-to-server",
+        "httpServerTests": "http-server",
+        "pageLoadTests": "page-load",
+        "webTransactionTests": "web-transactions"
+    }
+
+    for group, api_type in allowed.items():
+        for test in all_tests.get(group, []):
+            if test["testId"] in test_ids:
+                print(f"\nFetching metrics for {test['testName']} (type: {api_type})")
+                data = fetch_metrics(AID, api_type, test["testId"])
+                for result in data:
+                    print(result)
+
+if __name__ == "__main__":
+    main()
