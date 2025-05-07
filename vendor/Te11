@@ -1,0 +1,101 @@
+import os
+import httpx
+import json
+import asyncio
+from datetime import datetime
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+TOKEN = os.getenv("TE_API_TOKEN")
+BASE_URL = os.getenv("TE_API_BASE_URL", "https://api.thousandeyes.com/v6")
+AID = os.getenv("TE_AID") or "172062"  # fallback AID
+
+HEADERS = {
+    "Authorization": f"Bearer {TOKEN}",
+    "Content-Type": "application/json"
+}
+
+# Set proxies via env if provided
+http_proxy = os.getenv("HTTP_PROXY") or os.getenv("http_proxy")
+https_proxy = os.getenv("HTTPS_PROXY") or os.getenv("https_proxy")
+
+# Set environment proxy vars for httpx to pick up automatically
+if http_proxy:
+    os.environ["HTTP_PROXY"] = http_proxy
+if https_proxy:
+    os.environ["HTTPS_PROXY"] = https_proxy
+
+# Async function to get group labels
+async def fetch_group_labels(client, aid):
+    url = f"{BASE_URL}/groups.json?aid={aid}"
+    print(f"Fetching labels from {url}")
+    try:
+        resp = await client.get(url, headers=HEADERS)
+        resp.raise_for_status()
+        return resp.json().get("groups", [])
+    except Exception as e:
+        print(f"Error fetching labels: {e}")
+        return []
+
+# Extract app IDs from label names
+def extract_app_ids(groups):
+    app_ids = []
+    for g in groups:
+        name = g.get("name", "").lower().strip()
+        if "distributed_app_ids:" in name:
+            parts = name.split("distributed_app_ids:")
+            if len(parts) > 1:
+                extracted = parts[1].strip()
+                print(f"Extracted App ID: {extracted} from Label: {name}")
+                app_ids.append(extracted)
+    return app_ids
+
+# Async function to fetch test results for each app_id
+async def fetch_test_results_for_app(client, aid, app_id):
+    url = f"{BASE_URL}/tests.json?aid={aid}"
+    try:
+        resp = await client.get(url, headers=HEADERS)
+        resp.raise_for_status()
+        test_data = resp.json()
+        allowed = ["agentToServerTests", "httpServerTests", "pageLoadTests", "webTransactionTests"]
+        matched_tests = []
+
+        for key in allowed:
+            for test in test_data.get(key, []):
+                test_name = test.get("testName", "").lower()
+                if app_id.lower() in test_name:
+                    matched_tests.append({
+                        "testId": test["testId"],
+                        "testName": test["testName"],
+                        "type": key,
+                        "savedEvent": test.get("savedEvent"),
+                        "createdBy": test.get("createdBy")
+                    })
+
+        print(f"[{app_id}] Found {len(matched_tests)} matching tests")
+        return matched_tests
+    except Exception as e:
+        print(f"Error fetching tests for {app_id}: {e}")
+        return []
+
+# Main async runner
+async def main():
+    async with httpx.AsyncClient(timeout=30) as client:
+        labels = await fetch_group_labels(client, AID)
+        print(f"Total labels fetched: {len(labels)}")
+        app_ids = extract_app_ids(labels)
+        print("App IDs found:", app_ids)
+
+        results = {}
+        for app_id in app_ids:
+            tests = await fetch_test_results_for_app(client, AID, app_id)
+            results[app_id] = tests
+
+        # Write to file
+        with open("test_results.json", "w") as f:
+            json.dump(results, f, indent=2)
+        print("Test results written to test_results.json")
+
+if __name__ == "__main__":
+    asyncio.run(main())
