@@ -1,0 +1,105 @@
+import os
+import json
+import httpx
+from fastapi import FastAPI, Query
+from dotenv import load_dotenv
+
+# Load env variables
+load_dotenv()
+TOKEN = os.getenv("TE_API_TOKEN")
+BASE_URL = os.getenv("TE_API_BASE_URL", "https://api.thousandeyes.com/v6")
+HTTP_PROXY = os.getenv("HTTP_PROXY")
+HTTPS_PROXY = os.getenv("HTTPS_PROXY")
+
+# Proxy setup (via env)
+if HTTP_PROXY:
+    os.environ["HTTP_PROXY"] = HTTP_PROXY
+if HTTPS_PROXY:
+    os.environ["HTTPS_PROXY"] = HTTPS_PROXY
+
+headers = {
+    "Authorization": f"Bearer {TOKEN}"
+}
+
+app = FastAPI()
+
+def log(msg):
+    print(f"[INFO] {msg}")
+
+# Step 1: Get all account groups (AIDs)
+def get_all_account_groups():
+    url = f"{BASE_URL}/account-groups.json"
+    with httpx.Client(timeout=10) as client:
+        r = client.get(url, headers=headers)
+        r.raise_for_status()
+        return r.json().get("accountGroups", [])
+
+# Step 2: Get all labels for a specific AID
+def fetch_labels(aid):
+    url = f"{BASE_URL}/groups?aid={aid}&format=json"
+    with httpx.Client(timeout=15) as client:
+        r = client.get(url, headers=headers)
+        r.raise_for_status()
+        return r.json().get("groups", [])
+
+# Step 3: Get all tests under a group
+def fetch_tests(aid, group_id):
+    url = f"{BASE_URL}/groups/{group_id}?aid={aid}&format=json"
+    with httpx.Client(timeout=15) as client:
+        r = client.get(url, headers=headers)
+        r.raise_for_status()
+        groups = r.json().get("groups", [])
+        if groups and isinstance(groups[0], dict):
+            return groups[0].get("tests", [])
+        return []
+
+# FastAPI Endpoint
+@app.get("/test-results")
+def get_distributed_tests(distributed_app_id: str = Query(..., description="App ID inside distributed_app_ids label")):
+    all_tests = []
+    matched_labels = []
+
+    # Step 1: Get all AIDs
+    account_groups = get_all_account_groups()
+    log(f"Total AIDs found: {len(account_groups)}")
+
+    # Step 2: Look for matching labels across all AIDs
+    for acc in account_groups:
+        aid = acc["aid"]
+        try:
+            labels = fetch_labels(aid)
+            for label in labels:
+                name = label.get("name", "").lower()
+                if f"distributed_app_ids:[{distributed_app_id.lower()}" in name:
+                    matched_labels.append({
+                        "aid": aid,
+                        "groupId": label.get("groupId"),
+                        "labelName": label.get("name")
+                    })
+        except Exception as e:
+            log(f"Skipping AID {aid}: {e}")
+
+    log(f"Matched distributed_app_ids labels: {len(matched_labels)}")
+
+    # Step 3: For each matching group, fetch tests
+    for lbl in matched_labels:
+        try:
+            tests = fetch_tests(lbl["aid"], lbl["groupId"])
+            log(f"AID={lbl['aid']} Group={lbl['groupId']} => {len(tests)} tests")
+            all_tests.extend(tests)
+        except Exception as e:
+            log(f"Error fetching tests for group {lbl['groupId']}: {e}")
+
+    # Step 4: Write results to a JSON file
+    safe_id = distributed_app_id.lower().replace(" ", "_")
+    file_name = f"te_results_{safe_id}.json"
+    with open(file_name, "w") as f:
+        json.dump(all_tests, f, indent=2)
+
+    return {
+        "distributed_app_id": distributed_app_id,
+        "matched_groups": len(matched_labels),
+        "total_tests": len(all_tests),
+        "output_file": file_name,
+        "tests": all_tests
+    }
