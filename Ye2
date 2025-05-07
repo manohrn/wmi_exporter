@@ -1,0 +1,92 @@
+import os
+import json
+import time
+import httpx
+from dotenv import load_dotenv
+
+# Load env vars
+load_dotenv()
+
+TOKEN = os.getenv("TE_API_TOKEN")
+BASE_URL = os.getenv("TE_API_BASE_URL", "https://api.thousandeyes.com/v6")
+AID = os.getenv("TE_ACCOUNT_ID", "133")
+HTTP_PROXY = os.getenv("HTTP_PROXY")
+HTTPS_PROXY = os.getenv("HTTPS_PROXY")
+
+# Set proxies as environment variables for httpx to pick up automatically
+if HTTP_PROXY:
+    os.environ["HTTP_PROXY"] = HTTP_PROXY
+if HTTPS_PROXY:
+    os.environ["HTTPS_PROXY"] = HTTPS_PROXY
+
+headers = {
+    "Authorization": f"Bearer {TOKEN}"
+}
+
+def log(msg):
+    print(f"[INFO] {msg}")
+
+def fetch_labels(aid):
+    url = f"{BASE_URL}/groups?aid={aid}"
+    log(f"[STEP 2] Fetching labels for aid={aid}")
+    try:
+        with httpx.Client(timeout=10) as client:
+            response = client.get(url, headers=headers)
+            log(f"[OK] {url} - {len(response.text)} chars")
+            data = response.json()
+            labels = data.get("groups", [])
+            log(f"Total labels fetched: {len(labels)}")
+
+            with open("label_debug_output.json", "w") as f:
+                json.dump(labels, f, indent=2)
+
+            matched_labels = []
+            for label in labels:
+                if label.get("name", "").lower().startswith("distributed_app_ids:"):
+                    matched_labels.append(label)
+
+            log(f"Filtered distributed_app_ids labels: {len(matched_labels)}")
+            return matched_labels
+    except Exception as e:
+        log(f"Error fetching labels: {str(e)}")
+        return []
+
+def fetch_tests_for_label(aid, group_id):
+    url = f"{BASE_URL}/groups/{group_id}?aid={aid}&format=json"
+    try:
+        with httpx.Client(timeout=10) as client:
+            response = client.get(url, headers=headers)
+            if response.status_code != 200:
+                log(f"[WARN] Failed to fetch tests for group {group_id} - HTTP {response.status_code}")
+                return []
+            return response.json()
+    except Exception as e:
+        log(f"Error fetching test info: {str(e)}")
+        return []
+
+if __name__ == "__main__":
+    start = time.time()
+    log(f"Fetching labels for AID: {AID}")
+    labels = fetch_labels(AID)
+
+    log(f"[STEP 3] Matching label names:")
+    for label in labels:
+        print("- ", label.get("name"))
+
+    results = []
+    for label in labels:
+        group_id = label.get("groupId")
+        if group_id is None:
+            continue
+        test_data = fetch_tests_for_label(AID, group_id)
+        results.append({
+            "label": label.get("name"),
+            "group_id": group_id,
+            "test_data": test_data
+        })
+
+    with open("test_results_combined.json", "w") as f:
+        json.dump(results, f, indent=2)
+
+    log(f"[FINAL] All test data written to test_results_combined.json")
+    log(f"[DONE] Total time: {round(time.time() - start, 2)} seconds")
