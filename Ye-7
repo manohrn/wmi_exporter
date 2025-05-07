@@ -1,0 +1,88 @@
+import os
+import json
+import time
+import httpx
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+TOKEN = os.getenv("TE_API_TOKEN")
+BASE_URL = os.getenv("TE_API_BASE_URL", "https://api.thousandeyes.com/v6")
+AID = os.getenv("TE_ACCOUNT_ID", "133")
+HTTP_PROXY = os.getenv("HTTP_PROXY")
+HTTPS_PROXY = os.getenv("HTTPS_PROXY")
+
+proxies = {}
+if HTTP_PROXY:
+    proxies["http://"] = HTTP_PROXY
+if HTTPS_PROXY:
+    proxies["https://"] = HTTPS_PROXY
+
+headers = {
+    "Authorization": f"Bearer {TOKEN}"
+}
+
+def log(msg):
+    print(f"[INFO] {msg}")
+
+def fetch_labels(aid):
+    url = f"{BASE_URL}/groups?aid={aid}"
+    log(f"[STEP 2] Fetching labels from {url}")
+    try:
+        with httpx.Client(timeout=15, proxies=proxies) as client:
+            response = client.get(url, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+            labels = data.get("groups", [])
+            log(f"Total labels fetched: {len(labels)}")
+            return labels
+    except Exception as e:
+        log(f"[ERROR] Failed to fetch labels: {e}")
+        return []
+
+def extract_app_ids(labels):
+    matched = []
+    for label in labels:
+        name = label.get("name", "")
+        if "distributed_app_ids" in name:
+            matched.append(label)
+    log(f"Filtered labels with 'distributed_app_ids': {len(matched)}")
+    return matched
+
+def fetch_tests_for_label(aid, group_id):
+    url = f"{BASE_URL}/groups/{group_id}?aid={aid}&format=json"
+    try:
+        with httpx.Client(timeout=15, proxies=proxies) as client:
+            response = client.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json()
+    except Exception as e:
+        log(f"[ERROR] Failed to fetch test info for group_id {group_id}: {e}")
+        return {}
+
+def main():
+    start = time.time()
+    all_results = []
+
+    labels = fetch_labels(AID)
+    matched_labels = extract_app_ids(labels)
+
+    for label in matched_labels:
+        label_name = label.get("name", "")
+        group_id = label.get("groupId")
+        log(f"[STEP 3] Fetching test info for label: {label_name} (group_id: {group_id})")
+        test_data = fetch_tests_for_label(AID, group_id)
+        all_results.append({
+            "label": label_name,
+            "group_id": group_id,
+            "tests": test_data.get("agents", []) + test_data.get("tests", [])
+        })
+
+    with open("test_results_v6_output.json", "w") as f:
+        json.dump(all_results, f, indent=2)
+
+    log(f"[FINAL] Results written to test_results_v6_output.json")
+    log(f"[DONE] Completed in {round(time.time() - start, 2)} seconds")
+
+if __name__ == "__main__":
+    main()
