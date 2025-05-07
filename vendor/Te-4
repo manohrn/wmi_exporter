@@ -1,0 +1,94 @@
+import os
+import json
+import asyncio
+import httpx
+from dotenv import load_dotenv
+from time import time
+
+# Load environment variables
+load_dotenv()
+token = os.getenv("TE_API_TOKEN")
+base_url = os.getenv("TE_API_BASE_URL", "https://api.thousandeyes.com/v6")
+aid = os.getenv("TE_ACCOUNT_GROUP_AID", "172062")  # Default to 172062 for now
+
+# Optional proxy settings
+http_proxy = os.getenv("HTTP_PROXY") or os.getenv("http_proxy")
+https_proxy = os.getenv("HTTPS_PROXY") or os.getenv("https_proxy")
+
+if http_proxy:
+    os.environ["HTTP_PROXY"] = http_proxy
+if https_proxy:
+    os.environ["HTTPS_PROXY"] = https_proxy
+
+# Headers for ThousandEyes API
+headers = {
+    "Authorization": f"Bearer {token}",
+    "Content-Type": "application/json"
+}
+
+# Allowed test types and their endpoints
+allowed_types = {
+    "agentToServerTests": "agent-to-server",
+    "httpServerTests": "http-server",
+    "pageLoadTests": "page-load",
+    "webTransactionTests": "web-transactions"
+}
+
+# Helper function to fetch JSON with retry + error logging
+async def fetch_json(client, url):
+    try:
+        response = await client.get(url, headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        print(f"[ERROR] {url} -> {e}")
+        return {}
+
+# Main logic
+async def main():
+    start_time = time()
+    async with httpx.AsyncClient(timeout=30) as client:
+        # Step 2: Get all labels in the account group
+        label_url = f"{base_url}/groups.json?aid={aid}"
+        label_data = await fetch_json(client, label_url)
+        labels = label_data.get("groups", [])
+
+        # Step 3: Pick only labels that contain distributed_app_ids
+        filtered_labels = [
+            group for group in labels if "distributed_app_ids:" in group.get("name", "")
+        ]
+        app_ids = [label["name"].split("distributed_app_ids:")[-1].strip() for label in filtered_labels]
+
+        print(f"[INFO] App IDs found: {app_ids}")
+        results = []
+
+        # Step 4 + 5: For each label, fetch test info and metrics
+        for label in filtered_labels:
+            group_id = label.get("groupId")
+            group_url = f"{base_url}/groups/{group_id}?aid={aid}&format=json"
+            group_data = await fetch_json(client, group_url)
+
+            for test_key, test_type in allowed_types.items():
+                for test in group_data.get(test_key, []):
+                    test_id = test.get("testId")
+                    test_name = test.get("testName")
+                    metrics_url = f"{base_url}/tests/{test_type}/{test_id}/metrics?aid={aid}&limit=1"
+                    metrics_data = await fetch_json(client, metrics_url)
+
+                    results.append({
+                        "app_id": label["name"],
+                        "test_id": test_id,
+                        "test_name": test_name,
+                        "test_type": test_type,
+                        "latest_metrics": metrics_data.get("metrics", [])
+                    })
+
+        # Step 6: Save results to JSON
+        with open("test_results.json", "w") as f:
+            json.dump(results, f, indent=2)
+
+        print(f"[INFO] Script completed in {time() - start_time:.2f} seconds")
+        print(f"[INFO] {len(results)} test entries written to test_results.json")
+
+if __name__ == "__main__":
+    asyncio.run(main())
