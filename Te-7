@@ -1,0 +1,66 @@
+import os
+import json
+import time
+import httpx
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+TOKEN = os.getenv("TE_API_TOKEN")
+BASE_URL = os.getenv("TE_API_BASE_URL", "https://api.thousandeyes.com/v6")
+AID = os.getenv("TE_ACCOUNT_ID", "172062")
+HTTP_PROXY = os.getenv("HTTP_PROXY")
+HTTPS_PROXY = os.getenv("HTTPS_PROXY")
+
+proxies = {}
+if HTTP_PROXY:
+    proxies["http://"] = HTTP_PROXY
+if HTTPS_PROXY:
+    proxies["https://"] = HTTPS_PROXY
+
+headers = {
+    "Authorization": f"Bearer {TOKEN}"
+}
+
+def log(message):
+    print(f"[INFO] {message}")
+
+def fetch_labels(aid):
+    url = f"{BASE_URL}/groups.json?aid={aid}"
+    log(f"[STEP 2] Fetching labels for aid={aid}")
+    try:
+        with httpx.Client(proxies=proxies, timeout=10) as client:
+            response = client.get(url, headers=headers)
+            log(f"[OK] {url} - {len(response.text)} chars")
+            data = response.json()
+            labels = data.get("groups", [])
+            log(f"Total labels fetched: {len(labels)}")
+
+            with open("label_debug_output.json", "w") as f:
+                json.dump(labels, f, indent=2)
+
+            matched_labels = [
+                label for label in labels
+                if "app_id" in label.get("name", "").lower()
+            ]
+            log(f"Filtered labels with 'app_id' in name: {len(matched_labels)}")
+            return matched_labels
+    except Exception as e:
+        log(f"Error fetching labels: {str(e)}")
+        return []
+
+if __name__ == "__main__":
+    start = time.time()
+    log(f"Fetching labels for AID: {AID}")
+    labels = fetch_labels(AID)
+
+    log(f"Matching label names:")
+    for label in labels:
+        print(" -", label.get("name"))
+
+    # Save as debug output
+    with open("test_results_debug.json", "w") as f:
+        json.dump({"labels": labels}, f, indent=2)
+
+    log(f"[FINAL] Label details written to test_results_debug.json")
+    log(f"[DONE] Completed in {round(time.time() - start, 2)} seconds")
