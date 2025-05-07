@@ -2,11 +2,8 @@ config:
   integrations:
     process_exporter:
       process_names:
-{{- $envs := slice }}
-{{- range $i, $m := (ds "data").kafka_monitors }}
-  {{- $env := printf "%s" $m.env_name }}
-  {{- if not (has $envs $env) }}
-    {{- $envs = append $envs $env }}
+{{- $envs := (ds "data").kafka_monitors | uniq "env_name" | pluck "env_name" }}
+{{- range $i, $env := $envs }}
         - name: "kafka-broker-{{ $env }}"
           cmdline:
             - ".*kafka.Kafka.*"
@@ -26,7 +23,6 @@ config:
           cmdline:
             - ".*controlcenter.ControlCenter.*"
           recheck_on_scrape: true
-  {{- end }}
 {{- end }}
 
 {{- range $i, $m := (ds "data").kafka_monitors }}
@@ -45,6 +41,7 @@ config:
         groups_filter_regex: '[0-9a-z].*-CG[0-9]$'
   {{- end }}
 {{- end }}
+
 metrics:
   global:
     external_labels:
