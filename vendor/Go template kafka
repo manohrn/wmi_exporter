@@ -1,0 +1,22 @@
+process_names:
+  {{- $seen := dict }}
+  {{- range $m := .kafka_monitors }}
+    {{- if not (hasKey $seen $m.env_name) }}
+      {{- $_ := set $seen $m.env_name true }}
+  - name: "kafka-broker-{{ $m.env_name }}"
+    cmdline:
+      - ".*kafka.kafka.*{{ $m.env_name }}.*"
+  - name: "kafka-connect-{{ $m.env_name }}"
+    cmdline:
+      - ".*kafka.connect.*{{ $m.env_name }}.*"
+  - name: "kafka-rest-{{ $m.env_name }}"
+    cmdline:
+      - ".*kafka.rest.*{{ $m.env_name }}.*"
+  - name: "kafka-schemaregistry-{{ $m.env_name }}"
+    cmdline:
+      - ".*kafka.schemaregistry.*{{ $m.env_name }}.*"
+  - name: "kafka-controlcenter-{{ $m.env_name }}"
+    cmdline:
+      - ".*controlcenter.ControlCenter.*{{ $m.env_name }}.*"
+    {{- end }}
+  {{- end }}
