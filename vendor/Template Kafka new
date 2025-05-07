@@ -1,0 +1,55 @@
+config:
+  integrations:
+    process_exporter:
+      process_names:
+{{- $envs := slice }}
+{{- range $i, $m := (ds "data").kafka_monitors }}
+  {{- if not (has $envs $m.env_name) }}
+    {{- $envs = append $envs $m.env_name }}
+        - name: "kafka-broker-{{ $m.env_name }}"
+          cmdline:
+            - ".*kafka.Kafka.*"
+        - name: "kafka-zookeeper-{{ $m.env_name }}"
+          cmdline:
+            - ".*quorum.QuorumPeerMain.*"
+        - name: "kafka-connect-{{ $m.env_name }}"
+          cmdline:
+            - ".*kafka.connect.*"
+        - name: "kafka-rest-{{ $m.env_name }}"
+          cmdline:
+            - ".*kafka.rest.*"
+        - name: "kafka-schemaregistry-{{ $m.env_name }}"
+          cmdline:
+            - ".*kafka.schemaregistry.*"
+        - name: "kafka-controlcenter-{{ $m.env_name }}"
+          cmdline:
+            - ".*controlcenter.ControlCenter.*"
+          recheck_on_scrape: true
+  {{- end }}
+{{- end }}
+
+{{- range $i, $m := (ds "data").kafka_monitors }}
+  {{- if eq $m.component_name "broker" }}
+      kafka_exporter:
+        scrape_interval: 600s
+        scrape_timeout: 500s
+        enabled: true
+        use_tls: true
+        insecure_skip_verify: true
+        ca_file: /opt/grfclagt/conf/trustedcacerts.cer
+        kafka_uris: [ "{{ $m.fqdn_name }}:49092" ]
+        cert_file: /opt/grfclagt/conf/kees-grafana-prod401.cer
+        key_file: /opt/grfclagt/conf/kees-grafana-prod401.key
+        topics_filter_regex: '[0-9a-z].*|^_schemas$|^_consumer_offsets$|^_confluent-commands$|^_confluent-license$'
+        groups_filter_regex: '[0-9a-z].*-CG[0-9]$'
+  {{- end }}
+{{- end }}
+metrics:
+  global:
+    external_labels:
+      agent_hostname: ${HOSTNAME}
+    remote_write:
+      - basic_auth:
+          username: abc
+          password_file: /opt/grfclagt/conf/key_prod.txt
+        url: https://abc.com:27486
