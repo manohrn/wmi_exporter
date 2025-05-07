@@ -1,0 +1,105 @@
+import os
+import json
+import asyncio
+import httpx
+from dotenv import load_dotenv
+from time import time
+
+# Load environment variables
+load_dotenv()
+token = os.getenv("TE_API_TOKEN")
+base_url = os.getenv("TE_API_BASE_URL", "https://api.thousandeyes.com/v6")
+aid = os.getenv("TE_ACCOUNT_GROUP_AID", "172062")
+
+# Optional proxy setup
+http_proxy = os.getenv("HTTP_PROXY") or os.getenv("http_proxy")
+https_proxy = os.getenv("HTTPS_PROXY") or os.getenv("https_proxy")
+if http_proxy:
+    os.environ["HTTP_PROXY"] = http_proxy
+if https_proxy:
+    os.environ["HTTPS_PROXY"] = https_proxy
+
+headers = {
+    "Authorization": f"Bearer {token}",
+    "Content-Type": "application/json"
+}
+
+allowed_types = {
+    "agentToServerTests": "agent-to-server",
+    "httpServerTests": "http-server",
+    "pageLoadTests": "page-load",
+    "webTransactionTests": "web-transactions"
+}
+
+# Fetch with detailed logging
+async def fetch_json(client, url, label=None):
+    try:
+        response = await client.get(url, headers=headers)
+        response.raise_for_status()
+        data = response.json()
+        print(f"[OK] {url} ({label or 'no label'}) - {len(str(data))} chars")
+        return data
+    except Exception as e:
+        print(f"[ERROR] {url} -> {e}")
+        return {}
+
+async def main():
+    start = time()
+    async with httpx.AsyncClient(timeout=30) as client:
+        # Step 2: Fetch labels
+        print(f"\n[STEP 2] Fetching labels for aid={aid}")
+        label_url = f"{base_url}/groups.json?aid={aid}"
+        label_data = await fetch_json(client, label_url)
+        labels = label_data.get("groups", [])
+        print(f"Total labels fetched: {len(labels)}")
+
+        # Step 3: Filter labels with app ids
+        filtered_labels = [l for l in labels if "distributed_app_ids:" in l.get("name", "")]
+        print(f"Filtered labels with distributed_app_ids: {len(filtered_labels)}")
+        for l in filtered_labels:
+            print(f"  - {l['name']} (groupId: {l['groupId']})")
+
+        results = []
+
+        # Step 4 & 5: Fetch tests and metrics
+        for label in filtered_labels:
+            group_id = label["groupId"]
+            group_name = label["name"]
+
+            print(f"\n[STEP 4] Fetching tests for group '{group_name}' (ID: {group_id})")
+            test_url = f"{base_url}/groups/{group_id}.json?aid={aid}&format=json"
+            group_data = await fetch_json(client, test_url, label=group_name)
+
+            for key, type_name in allowed_types.items():
+                test_list = group_data.get(key, [])
+                print(f"  Found {len(test_list)} tests for type '{type_name}'")
+
+                for test in test_list:
+                    test_id = test.get("testId")
+                    test_name = test.get("testName")
+                    if not test_id or not test_name:
+                        continue
+
+                    print(f"    Fetching metrics for test: {test_name} (ID: {test_id})")
+                    metrics_url = f"{base_url}/tests/{type_name}/{test_id}/metrics.json?aid={aid}&limit=1"
+                    metrics_data = await fetch_json(client, metrics_url, label=test_name)
+                    metrics = metrics_data.get("metrics", [])
+                    print(f"      Metrics received: {len(metrics)} entries")
+
+                    results.append({
+                        "app_id": group_name,
+                        "test_id": test_id,
+                        "test_name": test_name,
+                        "test_type": type_name,
+                        "metrics": metrics
+                    })
+
+        # Save output
+        with open("test_results_debug.json", "w") as f:
+            json.dump(results, f, indent=2)
+
+        print(f"\n[FINAL] {len(results)} test results written to test_results_debug.json")
+        print(f"[DONE] Completed in {round(time() - start, 2)} seconds")
+
+if __name__ == "__main__":
+    asyncio.run(main())
