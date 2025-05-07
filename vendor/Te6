@@ -1,0 +1,32 @@
+import os
+import httpx
+from dotenv import load_dotenv
+
+# Load env vars
+load_dotenv()
+token = os.getenv("TE_API_TOKEN")
+base_url = os.getenv("TE_API_BASE_URL", "https://api.thousandeyes.com/v6")
+http_proxy = os.getenv("HTTP_PROXY")
+https_proxy = os.getenv("HTTPS_PROXY")
+
+# Proxy config
+proxies = {}
+if http_proxy:
+    proxies["http://"] = http_proxy
+if https_proxy:
+    proxies["https://"] = https_proxy
+
+# Setup headers
+headers = {
+    "Authorization": f"Bearer {token}"
+}
+
+# Perform test API call
+url = f"{base_url}/account-groups.json"
+try:
+    with httpx.Client(proxies=proxies, timeout=10) as client:
+        response = client.get(url, headers=headers)
+        print("Status Code:", response.status_code)
+        print("Response Text:", response.text[:500])  # Print partial content for clarity
+except Exception as e:
+    print("Request failed:", str(e))
