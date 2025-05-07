@@ -1,0 +1,87 @@
+from fastapi import FastAPI
+from pydantic import BaseModel
+import requests
+from requests.auth import HTTPBasicAuth
+from datetime import datetime, timedelta
+from typing import Dict
+
+app = FastAPI()
+
+# === Prometheus Setup ===
+PROMETHEUS_URL = "https://prometheus-dedicated-14-prod-us-central-0.grafana.net/api/v1"
+PROM_USER = "YOUR_USERNAME"
+PROM_PASS = "YOUR_API_KEY"
+VERIFY_TLS = False
+
+# === Optional Proxy ===
+PROXIES = {
+    "http": "http://proxy.wellsfargo.com:80",
+    "https": "http://proxy.wellsfargo.com:80",
+}
+
+# === Request Model ===
+class MetricRequest(BaseModel):
+    ci_name: str  # Can be agent_hostname or app_id
+    type: str     # 'host' or 'app'
+
+# === Time Helpers ===
+def now_rfc3339():
+    return datetime.utcnow().isoformat("T") + "Z"
+
+def thirty_minutes_ago_rfc3339():
+    return (datetime.utcnow() - timedelta(minutes=30)).isoformat("T") + "Z"
+
+# === PromQL Builder ===
+def build_promql_queries(ci_name: str, query_type: str) -> Dict[str, str]:
+    if query_type == "host":
+        return {
+            "cpu_usage": f'rate(node_cpu_seconds_total{{agent_hostname="{ci_name}", mode="idle"}}[5m])',
+            "memory_usage": f'(1 - (node_memory_MemAvailable_bytes{{agent_hostname="{ci_name}"}} / node_memory_MemTotal_bytes{{agent_hostname="{ci_name}"}}))',
+            "disk_read": f'rate(node_disk_read_bytes_total{{agent_hostname="{ci_name}"}}[5m])',
+            "network_tx": f'rate(node_network_transmit_bytes_total{{agent_hostname="{ci_name}"}}[5m])',
+        }
+    elif query_type == "app":
+        return {
+            "http_requests": f'rate(http_server_requests_total{{app_id="{ci_name}"}}[5m])',
+            "latency": f'rate(app_response_latency_seconds_sum{{app_id="{ci_name}"}}[5m]) / rate(app_response_latency_seconds_count{{app_id="{ci_name}"}}[5m])',
+        }
+    else:
+        return {}
+
+# === Prometheus Query Logic ===
+def query_range(promql: str) -> dict:
+    try:
+        response = requests.get(
+            f"{PROMETHEUS_URL}/query_range",
+            params={
+                "query": promql,
+                "start": thirty_minutes_ago_rfc3339(),
+                "end": now_rfc3339(),
+                "step": "300"
+            },
+            auth=HTTPBasicAuth(PROM_USER, PROM_PASS),
+            proxies=PROXIES,
+            verify=VERIFY_TLS,
+            timeout=60
+        )
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        return {"error": str(e)}
+
+# === API Endpoint ===
+@app.post("/prometheus/v1/metrics")
+async def get_metrics(req: MetricRequest):
+    promqls = build_promql_queries(req.ci_name, req.type)
+    results = {}
+    for metric, promql in promqls.items():
+        results[metric] = query_range(promql)
+    return {
+        "ci_name": req.ci_name,
+        "metrics": results
+    }
+
+{
+  "ci_name": "server123",
+  "type": "host"
+}
