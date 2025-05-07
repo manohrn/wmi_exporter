@@ -1,0 +1,17 @@
+import httpx
+from dotenv import load_dotenv
+import os
+
+# Load credentials from .env
+load_dotenv()
+email = os.getenv("TE_EMAIL")
+token = os.getenv("TE_API_TOKEN")
+base_url = "https://api.thousandeyes.com/v6/account-groups.json"
+
+try:
+    with httpx.Client(timeout=10) as client:
+        response = client.get(base_url, auth=(email, token))
+        print("Status Code:", response.status_code)
+        print("Response Text:", response.text[:500])
+except Exception as e:
+    print("Error:", str(e))
