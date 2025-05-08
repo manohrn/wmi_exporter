@@ -1,0 +1,27 @@
+import yaml
+import json
+
+# Load the YAML file
+with open("input_targets.yaml", "r") as f:
+    raw_data = yaml.safe_load(f)
+
+# Convert to River-compatible JSON structure
+targets_list = []
+for entry in raw_data:
+    labels = entry.get("labels", {})
+    name = labels.pop("name", "unknown")
+    address = entry.get("targets", ["localhost"])[0]
+
+    target_block = {
+        "name": name,
+        "address": address,
+        "labels": labels
+    }
+
+    targets_list.append(target_block)
+
+# Write to JSON file
+with open("output_targets.json", "w") as out:
+    json.dump(targets_list, out, indent=2)
+
+print("✅ JSON file 'output_targets.json' created.")
