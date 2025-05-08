@@ -1,0 +1,25 @@
+fastapi
+uvicorn
+requests
+python-dotenv
+
+
+#!/bin/bash
+export $(grep -v '^#' .env | xargs)
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+
+
+PROMETHEUS_URL=https://your-prometheus-instance/api/v1
+PROM_USER=your_username
+PROM_PASS=your_api_key
+VERIFY_TLS=False
+PROXY_HTTP=http://proxy.wellsfargo.com:80
+PROXY_HTTPS=https://proxy.wellsfargo.com:80
+
+
+fastapi_prometheus_service/
+├── main.py
+├── .env
+├── requirements.txt
+├── run.sh
