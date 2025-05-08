@@ -1,0 +1,74 @@
+// --- Dynamic target discovery from YAML files ---
+discovery.file "icmp_targets" {
+  files = ["blackbox_icmp.yaml"]  // YAML file listing ICMP probe targets [oai_citation:0‡grafana.com](https://grafana.com/docs/grafana-cloud/send-data/alloy/reference/components/prometheus/prometheus.exporter.blackbox/#:~:text=yaml%20Image%3A%20Copy%20code%20to,clipboard%20Copy)
+}
+discovery.file "tcp_targets" {
+  files = ["blackbox_tcp.yaml"]  // YAML file listing TCP probe targets [oai_citation:1‡grafana.com](https://grafana.com/docs/grafana-cloud/send-data/alloy/reference/components/prometheus/prometheus.exporter.blackbox/#:~:text=yaml%20Image%3A%20Copy%20code%20to,clipboard%20Copy)
+}
+
+// --- Blackbox exporter components for ICMP and TCP probes ---
+prometheus.exporter.blackbox "icmp_probe" {
+  // Blackbox modules configuration (ICMP and TCP modules) [oai_citation:2‡grafana.com](https://grafana.com/docs/agent/latest/flow/reference/components/prometheus.exporter.blackbox/#:~:text=prometheus.exporter.blackbox%20,yml) [oai_citation:3‡stackoverflow.com](https://stackoverflow.com/questions/67625676/monitoring-tcp-endpoint-using-blackbox-exporter#:~:text=tcp_connect%3A%20prober%3A%20tcp%20timeout%3A%205s)
+  config = "{ modules: { \
+icmp: { prober: icmp, timeout: 5s, icmp: { preferred_ip_protocol: ip4 } }, \
+tcp_connect: { prober: tcp, timeout: 5s } } }"
+
+  // Dynamically load targets for ICMP from the file discovery (no static target block needed) [oai_citation:4‡grafana.com](https://grafana.com/docs/grafana-cloud/send-data/alloy/reference/components/prometheus/prometheus.exporter.blackbox/#:~:text=You%20can%E2%80%99t%20use%20both%20the,because%20another%20component%20supplies%20them)
+  targets = discovery.file.icmp_targets.targets
+}
+
+prometheus.exporter.blackbox "tcp_probe" {
+  // Reuse the same blackbox modules config (includes tcp_connect module)
+  config = "{ modules: { \
+icmp: { prober: icmp, timeout: 5s, icmp: { preferred_ip_protocol: ip4 } }, \
+tcp_connect: { prober: tcp, timeout: 5s } } }"
+
+  // Dynamically load targets for TCP from the file discovery [oai_citation:5‡grafana.com](https://grafana.com/docs/grafana-cloud/send-data/alloy/reference/components/prometheus/prometheus.exporter.blackbox/#:~:text=You%20can%E2%80%99t%20use%20both%20the,because%20another%20component%20supplies%20them)
+  targets = discovery.file.tcp_targets.targets
+}
+
+// --- Relabeling to route targets through blackbox and set instance labels ---
+discovery.relabel "icmp_relabel" {
+  targets = prometheus.exporter.blackbox.icmp_probe.targets
+  rule {
+    // Set the instance label to the actual ICMP target address for clarity [oai_citation:6‡grafana.com](https://grafana.com/docs/grafana-cloud/send-data/alloy/reference/components/prometheus/prometheus.exporter.blackbox/#:~:text=prometheus.exporter.blackbox%20,)
+    source_labels = ["__param_target"]
+    target_label  = "instance"
+  }
+}
+discovery.relabel "tcp_relabel" {
+  targets = prometheus.exporter.blackbox.tcp_probe.targets
+  rule {
+    // Set the instance label to the actual TCP target address for clarity [oai_citation:7‡grafana.com](https://grafana.com/docs/grafana-cloud/send-data/alloy/reference/components/prometheus/prometheus.exporter.blackbox/#:~:text=prometheus.exporter.blackbox%20,)
+    source_labels = ["__param_target"]
+    target_label  = "instance"
+  }
+}
+
+// --- Prometheus scrape jobs for ICMP and TCP (scraping internal blackbox endpoints) ---
+prometheus.scrape "icmp" {
+  targets   = discovery.relabel.icmp_relabel.output  // Scrape the relabeled ICMP targets (routed via blackbox) [oai_citation:8‡grafana.com](https://grafana.com/docs/grafana-cloud/send-data/alloy/reference/components/prometheus/prometheus.exporter.blackbox/#:~:text=The%20following%20fields%20are%20exported,be%20referenced%20by%20other%20components)
+  job_name  = "blackbox_icmp"                        // Job label name for all ICMP probes
+  interval  = "60s"                                  // (Optional) scrape interval for ICMP probes
+  timeout   = "10s"                                  // (Optional) scrape timeout
+  forward_to = [prometheus.remote_write.out.receiver]  // Forward scraped metrics to remote write [oai_citation:9‡grafana.com](https://grafana.com/docs/agent/latest/flow/reference/components/prometheus.exporter.blackbox/#:~:text=%2F%2F%20Configure%20a%20prometheus,prometheus.remote_write.demo.receiver%5D)
+}
+prometheus.scrape "tcp" {
+  targets   = discovery.relabel.tcp_relabel.output   // Scrape the relabeled TCP targets (routed via blackbox) [oai_citation:10‡grafana.com](https://grafana.com/docs/grafana-cloud/send-data/alloy/reference/components/prometheus/prometheus.exporter.blackbox/#:~:text=The%20following%20fields%20are%20exported,be%20referenced%20by%20other%20components)
+  job_name  = "blackbox_tcp"                        // Job label name for all TCP connect probes
+  interval  = "60s"                                 // (Optional) scrape interval for TCP probes
+  timeout   = "10s"                                 // (Optional) scrape timeout
+  forward_to = [prometheus.remote_write.out.receiver]   // Forward scraped metrics to remote write [oai_citation:11‡grafana.com](https://grafana.com/docs/agent/latest/flow/reference/components/prometheus.exporter.blackbox/#:~:text=%2F%2F%20Configure%20a%20prometheus,prometheus.remote_write.demo.receiver%5D)
+}
+
+// --- Remote write configuration (placeholder URL, credentials, and proxy) ---
+prometheus.remote_write "out" {
+  endpoint {
+    url = "<REMOTE_WRITE_URL>"  // e.g. "https://prometheus.example.com/api/v1/write"
+    basic_auth {
+      username = "<USERNAME>"
+      password = "<PASSWORD>"
+    }
+    proxy_url = "http://<PROXY_ADDRESS>:<PROXY_PORT>"  // e.g. "http://proxy.local:3128"
+  }
+}
