@@ -1,0 +1,21 @@
+elif query_type == "app":
+    return {
+        "cpu_usage": (
+            f'(host:windows_cpu_utilization:rate5m_percent or '
+            f'host:node_cpu_utilization:rate5m_percent) '
+            f'on(agent_hostname) group_left(environment, application_id) '
+            f'server_info{{application_id="{ci_name}"}}'
+        ),
+        "memory_usage": (
+            f'(host:windows_memory_utilization:ratio_percent or '
+            f'host:node_memory_utilization:ratio_percent) '
+            f'on(agent_hostname) group_left(environment, application_id) '
+            f'server_info{{application_id="{ci_name}"}}'
+        ),
+        "disk_usage": (
+            f'(host:windows_disk_used:ratio_percent or '
+            f'host:node_disk_used:ratio_percent) '
+            f'on(agent_hostname) group_left(environment, application_id) '
+            f'server_info{{application_id="{ci_name}"}}'
+        )
+    }
