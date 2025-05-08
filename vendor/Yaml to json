@@ -1,0 +1,25 @@
+import yaml
+import json
+import sys
+from pathlib import Path
+
+# Input and output file paths
+input_yaml = "blackbox_tcp.yaml"   # <-- Your YAML file
+output_json = "blackbox_tcp_targets.json"  # <-- JSON file to use in Flow mode
+
+def convert_yaml_to_json(yaml_file, json_file):
+    with open(yaml_file, 'r') as yf:
+        data = yaml.safe_load(yf)
+
+    with open(json_file, 'w') as jf:
+        json.dump(data, jf, indent=2)
+
+    print(f"Converted: {yaml_file} --> {json_file}")
+
+# Run conversion
+if __name__ == "__main__":
+    if not Path(input_yaml).exists():
+        print(f"❌ Input file not found: {input_yaml}")
+        sys.exit(1)
+
+    convert_yaml_to_json(input_yaml, output_json)
