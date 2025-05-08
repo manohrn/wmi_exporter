@@ -1,0 +1,21 @@
+import yaml
+
+with open("input_targets.yaml", "r", encoding="utf-8") as f:
+    data = yaml.safe_load(f)
+
+with open("output_targets.river", "w", encoding="utf-8") as out:
+    for entry in data:
+        labels = entry.get("labels", {})
+        name = labels.pop("name", "dummy")
+        address = entry.get("targets", ["localhost"])[0]
+
+        out.write("  target {\n")
+        out.write(f'    name    = "{name}"\n')
+        out.write(f'    address = "{address}"\n')
+        out.write("    labels = {\n")
+        for k, v in labels.items():
+            out.write(f'      {k} = "{v}"\n')
+        out.write("    }\n")
+        out.write("  }\n\n")
+
+print("✅ River-formatted file 'output_targets.river' created.")
