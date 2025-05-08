@@ -1,0 +1,115 @@
+import os
+import json
+import time
+import httpx
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+TOKEN = os.getenv("TE_API_TOKEN")
+BASE_URL = os.getenv("TE_API_BASE_URL", "https://api.thousandeyes.com/v6")
+AID = os.getenv("TE_ACCOUNT_ID")
+HTTP_PROXY = os.getenv("HTTP_PROXY")
+HTTPS_PROXY = os.getenv("HTTPS_PROXY")
+
+HEADERS = {"Authorization": f"Bearer {TOKEN}"}
+PROXIES = None
+if HTTP_PROXY or HTTPS_PROXY:
+    PROXIES = httpx.Proxy(
+        url=HTTPS_PROXY or HTTP_PROXY
+    )
+
+def log(msg):
+    print(f"[INFO] {msg}")
+
+def rate_limit_pause(headers):
+    try:
+        remaining = int(headers.get("x-organization-rate-limit-remaining", 1))
+        reset = int(headers.get("x-organization-rate-limit-reset", int(time.time())))
+        now = int(time.time())
+        if remaining <= 1:
+            wait = max(reset - now, 1)
+            log(f"Rate limit hit. Waiting {wait}s...")
+            time.sleep(wait)
+    except Exception as e:
+        log(f"Rate limit check error: {e}")
+
+def fetch_account_groups():
+    url = f"{BASE_URL}/account-groups.json"
+    try:
+        with httpx.Client(proxies=PROXIES, timeout=10) as client:
+            response = client.get(url, headers=HEADERS)
+            rate_limit_pause(response.headers)
+            response.raise_for_status()
+            return response.json().get("accountGroups", [])
+    except Exception as e:
+        log(f"Error fetching account groups: {e}")
+        return []
+
+def fetch_labels(aid):
+    url = f"{BASE_URL}/groups?aid={aid}&format=json"
+    try:
+        with httpx.Client(proxies=PROXIES, timeout=10) as client:
+            response = client.get(url, headers=HEADERS)
+            rate_limit_pause(response.headers)
+            response.raise_for_status()
+            return response.json().get("groups", [])
+    except Exception as e:
+        log(f"[{aid}] Failed to fetch labels: {e}")
+        return []
+
+def fetch_tests(group_id, aid):
+    url = f"{BASE_URL}/groups/{group_id}?aid={aid}&format=json"
+    try:
+        with httpx.Client(proxies=PROXIES, timeout=10) as client:
+            response = client.get(url, headers=HEADERS)
+            rate_limit_pause(response.headers)
+            response.raise_for_status()
+            return response.json().get("tests", [])
+    except Exception as e:
+        log(f"Group {group_id} failed test fetch: {e}")
+        return []
+
+def main():
+    start = time.time()
+    all_tests = []
+
+    account_groups = fetch_account_groups()
+    log(f"Found {len(account_groups)} account groups.")
+
+    for ag in account_groups:
+        aid = ag.get("aid")
+        if not aid:
+            continue
+
+        log(f"Processing AID {aid}")
+        labels = fetch_labels(aid)
+
+        for label in labels:
+            name = label.get("name", "").lower()
+            if "distributed_app_ids:" in name:
+                group_id = label.get("groupId")
+                log(f"  Label: {name} (Group ID: {group_id})")
+
+                tests = fetch_tests(group_id, aid)
+                log(f"  -> Fetched {len(tests)} tests.")
+                all_tests.extend(tests)
+
+    # Dedup by testId
+    seen = set()
+    final = []
+    for test in all_tests:
+        tid = test.get("testId")
+        if tid and tid not in seen:
+            seen.add(tid)
+            final.append(test)
+
+    out_file = "distributed_app_test_results.json"
+    with open(out_file, "w") as f:
+        json.dump(final, f, indent=2)
+
+    log(f"[DONE] Exported {len(final)} tests to {out_file}")
+    log(f"[TIME] Execution took {round(time.time() - start, 2)}s")
+
+if __name__ == "__main__":
+    main()
