@@ -1,0 +1,9 @@
+$proxy = New-Object System.Net.WebProxy("http://proxy-host:port", $true)
+$client = New-Object System.Net.WebClient
+$client.Proxy = $proxy
+
+$outputPath = "$env:TEMP\grafana-agent.zip"
+$downloadUrl = "https://github.com/grafana/agent/releases/latest/download/grafana-agent-windows-amd64.zip"
+
+$client.DownloadFile($downloadUrl, $outputPath)
+Write-Output "Downloaded to $outputPath"
