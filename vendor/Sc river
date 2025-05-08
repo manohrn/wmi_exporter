@@ -1,0 +1,73 @@
+server "agent" {
+  log_level = "info"
+  http {
+    listen_address = "0.0.0.0:12345"
+  }
+  cluster {
+    enabled = true
+    advertise_address = "10.0.0.1:7946"  // CHANGE for each node
+    join_members = ["10.0.0.2:7946", "10.0.0.3:7946"]
+  }
+}
+
+local.file "blackbox_config" {
+  filename = "C:/Program Files/Grafana Agent/blackbox_modules.yml"
+}
+
+prometheus.exporter.blackbox "blackbox" {
+  config = local.file.blackbox_config.content
+}
+
+discovery.file "blackbox_targets" {
+  files = ["C:/Program Files/Grafana Agent/targets.yaml"]
+}
+
+discovery.relabel "blackbox_relabel" {
+  targets = discovery.file.blackbox_targets.targets
+
+  rule {
+    source_labels = ["__address__"]
+    target_label  = "__param_target"
+  }
+
+  rule {
+    source_labels = ["module"]
+    target_label  = "__param_module"
+  }
+
+  rule {
+    target_label = "__address__"
+    replacement = "agent.internal:12345"
+  }
+
+  rule {
+    target_label = "__metrics_path__"
+    replacement = "/api/v0/component/prometheus.exporter.blackbox.blackbox/metrics"
+  }
+
+  rule {
+    target_label = "module"
+    action       = "drop"
+  }
+}
+
+prometheus.remote_write "mimir" {
+  endpoint {
+    url = "https://your-mimir-url/api/prom/push"
+    basic_auth {
+      username = "your-username"
+      password = "your-password"
+    }
+  }
+}
+
+prometheus.scrape "blackbox_probes" {
+  targets            = discovery.relabel.blackbox_relabel.output
+  scrape_interval    = "30s"
+  scrape_timeout     = "10s"
+  forward_to         = [prometheus.remote_write.mimir.receiver]
+
+  clustering {
+    enabled = true
+  }
+}
