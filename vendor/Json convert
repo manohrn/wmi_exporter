@@ -1,0 +1,22 @@
+import yaml
+
+# Load YAML file
+with open("input_targets.yaml", "r") as f:
+    data = yaml.safe_load(f)
+
+# Generate River-style target blocks
+for entry in data:
+    labels = entry.get("labels", {})
+    name = labels.pop("name", "unknown")
+    targets = entry.get("targets", [])
+    address = targets[0] if targets else "localhost"
+
+    print(f'  target {{')
+    print(f'    name    = "{name}"')
+    print(f'    address = "{address}"')
+    print(f'    labels = {{')
+
+    for key, value in labels.items():
+        print(f'      {key} = "{value}"')
+
+    print(f'    }}\n  }}\n')
