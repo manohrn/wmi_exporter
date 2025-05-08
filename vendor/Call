@@ -1,0 +1,10 @@
+import requests
+
+url = "http://localhost:8000/prometheus/metrics"  # Or replace with actual host
+payload = {
+    "ci_name": "your-agent-hostname-or-app-id",
+    "type": "host"  # or "app"
+}
+response = requests.post(url, json=payload)
+
+print(response.json())
