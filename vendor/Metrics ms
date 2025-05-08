@@ -1,0 +1,80 @@
+from fastapi import FastAPI
+from pydantic import BaseModel
+from typing import Dict
+from datetime import datetime, timedelta
+import requests
+import os
+from requests.auth import HTTPBasicAuth
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+PROMETHEUS_URL = os.getenv("PROMETHEUS_URL")
+PROM_USER = os.getenv("PROM_USER")
+PROM_PASS = os.getenv("PROM_PASS")
+VERIFY_TLS = os.getenv("VERIFY_TLS", "False").lower() == "true"
+
+PROXIES = {
+    "http": os.getenv("PROXY_HTTP"),
+    "https": os.getenv("PROXY_HTTPS")
+}
+
+app = FastAPI()
+
+# Request model
+class MetricRequest(BaseModel):
+    ci_name: str
+    type: str  # "host" or "app"
+
+# Helpers
+def now_rfc3339():
+    return datetime.utcnow().isoformat("T") + "Z"
+
+def thirty_minutes_ago_rfc3339():
+    return (datetime.utcnow() - timedelta(minutes=30)).isoformat("T") + "Z"
+
+def build_promql_queries(ci_name: str, query_type: str) -> Dict[str, str]:
+    if query_type == "host":
+        return {
+            "cpu_usage": f'host:windows_cpu_utilization:rate5m_percent{{agent_hostname="{ci_name}"}} '
+                         f'or host:aix_cpu_utilization:rate5m_percent{{agent_hostname="{ci_name}"}} '
+                         f'or host:node_cpu_utilization:rate5m_percent{{agent_hostname="{ci_name}"}}'
+        }
+    elif query_type == "app":
+        return {
+            "cpu_usage": f'host:windows_cpu_utilization:rate5m_percent or '
+                         f'label_join(host:aix_cpu_utilization:rate5m_percent, "agent_hostname", "", "ip") or '
+                         f'host:node_cpu_utilization:rate5m_percent '
+                         f'on(agent_hostname) group_left(environment, application_id) '
+                         f'server_info{{app_id="{ci_name}"}}'
+        }
+    return {}
+
+def query_range(promql: str) -> dict:
+    try:
+        response = requests.get(
+            f"{PROMETHEUS_URL}/query_range",
+            params={
+                "query": promql,
+                "start": thirty_minutes_ago_rfc3339(),
+                "end": now_rfc3339(),
+                "step": "300"
+            },
+            auth=HTTPBasicAuth(PROM_USER, PROM_PASS),
+            proxies=PROXIES,
+            verify=VERIFY_TLS,
+            timeout=60
+        )
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.post("/prometheus/metrics")
+async def get_metrics(req: MetricRequest):
+    promqls = build_promql_queries(req.ci_name, req.type)
+    results = {}
+    for metric, query in promqls.items():
+        results[metric] = query_range(query)
+    return {"ci_name": req.ci_name, "metrics": results}
