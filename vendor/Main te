@@ -1,0 +1,85 @@
+# main.py
+
+import os
+import json
+import time
+import httpx
+from typing import List
+from fastapi import FastAPI, Query
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+TOKEN = os.getenv("TE_API_TOKEN")
+BASE_URL = os.getenv("TE_API_BASE_URL", "https://api.thousandeyes.com/v6")
+HTTP_PROXY = os.getenv("HTTP_PROXY")
+HTTPS_PROXY = os.getenv("HTTPS_PROXY")
+
+HEADERS = {"Authorization": f"Bearer {TOKEN}"}
+PROXIES = None
+if HTTP_PROXY or HTTPS_PROXY:
+    PROXIES = httpx.Proxy(url=HTTPS_PROXY or HTTP_PROXY)
+
+app = FastAPI()
+
+def rate_limit_pause(headers):
+    try:
+        remaining = int(headers.get("x-organization-rate-limit-remaining", 1))
+        reset = int(headers.get("x-organization-rate-limit-reset", int(time.time())))
+        now = int(time.time())
+        if remaining <= 1:
+            wait = max(reset - now, 1)
+            time.sleep(wait)
+    except:
+        pass
+
+def fetch_labels(aid):
+    url = f"{BASE_URL}/groups?aid={aid}&format=json"
+    try:
+        with httpx.Client(proxies=PROXIES, timeout=15) as client:
+            response = client.get(url, headers=HEADERS)
+            rate_limit_pause(response.headers)
+            response.raise_for_status()
+            return response.json().get("groups", [])
+    except Exception as e:
+        return []
+
+def fetch_tests(group_id, aid):
+    url = f"{BASE_URL}/groups/{group_id}?aid={aid}&format=json"
+    try:
+        with httpx.Client(proxies=PROXIES, timeout=15) as client:
+            response = client.get(url, headers=HEADERS)
+            rate_limit_pause(response.headers)
+            response.raise_for_status()
+            return response.json().get("tests", [])
+    except Exception as e:
+        return []
+
+@app.get("/te-tests")
+def get_distributed_app_tests(aid: str = Query(..., description="ThousandEyes account ID")):
+    start = time.time()
+    results = []
+
+    labels = fetch_labels(aid)
+    for label in labels:
+        name = label.get("name", "").lower()
+        if "distributed_app_ids:" in name:
+            group_id = label.get("groupId")
+            tests = fetch_tests(group_id, aid)
+            results.extend(tests)
+
+    # Remove duplicates
+    seen = set()
+    final = []
+    for test in results:
+        tid = test.get("testId")
+        if tid and tid not in seen:
+            seen.add(tid)
+            final.append(test)
+
+    return {
+        "aid": aid,
+        "total_tests": len(final),
+        "duration_secs": round(time.time() - start, 2),
+        "tests": final
+    }
