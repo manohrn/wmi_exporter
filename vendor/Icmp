@@ -1,0 +1,124 @@
+// Load ICMP blackbox module from YAML file
+local.file "icmp_modules" {
+  filename = "C:/Program Files/Grafana Agent/blackbox_modules_icmp.yml"
+}
+
+// ICMP Blackbox Exporter with static targets
+prometheus.exporter.blackbox "blackbox_icmp" {
+  config = local.file.icmp_modules.content
+
+  target {
+    name    = "edndm_ping_edpdsndm01"
+    address = "edpdsndm01.ent.wfb.bank.corp"
+    labels = {
+      frequency = "180",
+      group = "cor_edndm",
+      host = "edpdsndm01",
+      fqdn = "edpdsndm01.ent.wfb.bank.corp",
+      module = "icmp",
+      timeout = "60",
+      type = "pingmonitor",
+      app_id = "edndm",
+      basename = "yes",
+    }
+  }
+
+  target {
+    name    = "mule_ping_wsvra87a0916"
+    address = "wsvra87a0916.wellsfargo.com"
+    labels = {
+      frequency = "300",
+      group = "cor_mule",
+      host = "wsvra87a0916",
+      fqdn = "wsvra87a0916.wellsfargo.com",
+      module = "icmp",
+      timeout = "60",
+      type = "pingmonitor",
+      app_id = "mule",
+      basename = "yes",
+    }
+  }
+}
+
+// Optional: Add relabeling to promote target-level metadata
+discovery.relabel "blackbox_icmp_relabel" {
+  targets = prometheus.exporter.blackbox.blackbox_icmp.targets
+
+  rule {
+    source_labels = ["__param_target"]
+    target_label  = "instance"
+  }
+
+  rule {
+    source_labels = ["__param_module"]
+    target_label  = "module"
+  }
+
+  rule {
+    source_labels = ["__param_target"]
+    target_label  = "target"
+  }
+
+  rule {
+    target_label = "job"
+    replacement  = "blackbox_icmp"
+  }
+}
+
+// Remote write configuration
+prometheus.remote_write "out" {
+  endpoint {
+    url = "https://prometheus.example.com/api/v1/write"
+    basic_auth {
+      username = "your-username"
+      password = "your-api-key"
+    }
+    proxy_url = "http://your-proxy:8080" // Optional
+  }
+}
+
+// Scrape metrics from blackbox_icmp exporter
+prometheus.scrape "scrape_blackbox_icmp" {
+  job_name        = "blackbox_icmp"
+  targets         = discovery.relabel.blackbox_icmp_relabel.output
+  scrape_interval = "60s"
+  scrape_timeout  = "10s"
+  forward_to      = [prometheus.remote_write.out.receiver]
+}
+
+
+
+import yaml
+
+with open("input_targets.yaml", "r", encoding="utf-8") as f:
+    data = yaml.safe_load(f)
+
+with open("blackbox_icmp.river", "w", encoding="utf-8") as out:
+    # Write the header
+    out.write('prometheus.exporter.blackbox "blackbox_icmp" {\n')
+    out.write('  config = "modules:\\n  icmp:\\n    prober: icmp\\n    timeout: 5s\\n    icmp:\\n      preferred_ip_protocol: ip4"\n\n')
+
+    # Append all targets
+    for entry in data:
+        labels = entry.get("labels", {})
+        name = labels.pop("name", "dummy")
+        address = entry.get("targets", ["localhost"])[0]
+
+        out.write("  target {\n")
+        out.write(f'    name    = "{name}"\n')
+        out.write(f'    address = "{address}"\n')
+        out.write("    labels = {\n")
+
+        label_items = list(labels.items())
+        for i, (k, v) in enumerate(label_items):
+            comma = "," if i < len(label_items) - 1 else ""
+            out.write(f'      {k} = "{v}"{comma}\n')
+
+        out.write("    }\n")
+        out.write("  }\n\n")
+
+    # Close the block
+    out.write("}\n")
+
+print("✅ ICMP River config written to 'blackbox_icmp.river'")
+
