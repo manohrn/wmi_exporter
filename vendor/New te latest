@@ -1,0 +1,127 @@
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+import os
+import pyodbc
+import httpx
+from dotenv import load_dotenv
+import logging
+import time
+
+# Load environment variables
+load_dotenv()
+
+# Logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+
+# Env variables
+SQL_SERVER = os.getenv("SQL_SERVER")
+SQL_PORT = os.getenv("SQL_PORT", "1433")
+SQL_USER = os.getenv("SQL_USER")
+SQL_PASSWORD = os.getenv("SQL_PASSWORD")
+SQL_DB = os.getenv("SQL_DB")
+
+TE_API_TOKEN = os.getenv("TE_API_TOKEN")
+TE_BASE_URL = os.getenv("TE_BASE_URL", "https://api.thousandeyes.com/v7")
+HTTP_PROXY = os.getenv("HTTP_PROXY")
+HTTPS_PROXY = os.getenv("HTTPS_PROXY")
+
+proxies = {}
+if HTTP_PROXY and HTTPS_PROXY:
+    proxies = {
+        "http://": HTTP_PROXY,
+        "https://": HTTPS_PROXY
+    }
+
+app = FastAPI()
+
+class AppIDRequest(BaseModel):
+    app_id: str
+
+# Fetch aid, testId, testType for a given AppIds (distributed app_id)
+def get_tests(app_id: str):
+    try:
+        conn_str = (
+            f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+            f"SERVER={SQL_SERVER},{SQL_PORT};"
+            f"DATABASE={SQL_DB};"
+            f"UID={SQL_USER};"
+            f"PWD={SQL_PASSWORD};"
+            f"TrustServerCertificate=Yes;"
+        )
+        conn = pyodbc.connect(conn_str)
+        cursor = conn.cursor()
+        query = """
+            SELECT DISTINCT Aid, TestId, TestType
+            FROM dbo.t_ThousandEyes_Tests WITH (NOLOCK)
+            WHERE AppIds = ?
+        """
+        cursor.execute(query, app_id)
+        rows = cursor.fetchall()
+        conn.close()
+
+        if not rows:
+            raise ValueError(f"No test records found for App ID: {app_id}")
+
+        tests = [{"aid": row[0], "testId": row[1], "testType": row[2]} for row in rows]
+        logging.info(f"Fetched {len(tests)} test(s) for AppIds = '{app_id}'")
+        return tests
+    except Exception as e:
+        logging.error(f"Database error: {e}")
+        raise
+
+# Call ThousandEyes v7 test result API
+def fetch_test_result(aid: int, test_id: int, test_type: str, client: httpx.Client):
+    url = f"{TE_BASE_URL}/tests/{test_id}/{test_type}.json?aid={aid}"
+    headers = {
+        "Authorization": f"Bearer {TE_API_TOKEN}",
+        "Accept": "application/json"
+    }
+
+    while True:
+        try:
+            response = client.get(url, headers=headers)
+            if "x-organization-rate-limit-remaining" in response.headers:
+                remaining = int(response.headers["x-organization-rate-limit-remaining"])
+                reset_time = int(response.headers.get("x-organization-rate-limit-reset", 1))
+                logging.info(f"Rate limit remaining: {remaining}")
+                if remaining < 2:
+                    logging.warning(f"Rate limit low. Sleeping {reset_time} seconds...")
+                    time.sleep(reset_time + 1)
+                    continue
+
+            response.raise_for_status()
+            logging.info(f"Success: AID={aid}, TestID={test_id}, Type={test_type}")
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            logging.error(f"HTTP error {e.response.status_code}: {e.response.text}")
+            raise
+        except Exception as e:
+            logging.error(f"Unexpected error: {e}")
+            raise
+
+@app.post("/get-test-results")
+def get_test_results(request: AppIDRequest):
+    app_id = request.app_id.strip()
+    try:
+        tests = get_tests(app_id)
+        results = []
+
+        with httpx.Client(timeout=30, proxies=proxies) as client:
+            for t in tests:
+                data = fetch_test_result(t["aid"], t["testId"], t["testType"], client)
+                results.append({
+                    "aid": t["aid"],
+                    "testId": t["testId"],
+                    "testType": t["testType"],
+                    "result": data
+                })
+
+        return {
+            "app_id": app_id,
+            "total_results": len(results),
+            "results": results
+        }
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal Server Error")
