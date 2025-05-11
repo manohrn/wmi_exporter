@@ -1,0 +1,152 @@
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+import os
+import pyodbc
+import httpx
+from dotenv import load_dotenv
+import logging
+import traceback
+import time
+
+# Load .env variables
+load_dotenv()
+
+# Logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+
+# Environment
+SQL_SERVER = os.getenv("SQL_SERVER")
+SQL_PORT = os.getenv("SQL_PORT", "1433")
+SQL_USER = os.getenv("SQL_USER")
+SQL_PASSWORD = os.getenv("SQL_PASSWORD")
+SQL_DB = os.getenv("SQL_DB")
+TE_API_TOKEN = os.getenv("TE_API_TOKEN")
+BASE_URL = os.getenv("TE_API_BASE_URL", "https://api.thousandeyes.com/v6")
+HTTP_PROXY = os.getenv("HTTP_PROXY")
+HTTPS_PROXY = os.getenv("HTTPS_PROXY")
+
+proxies = {}
+if HTTP_PROXY and HTTPS_PROXY:
+    proxies = {
+        "http://": HTTP_PROXY,
+        "https://": HTTPS_PROXY
+    }
+
+# FastAPI app
+app = FastAPI()
+
+class AppIDRequest(BaseModel):
+    app_id: str
+
+def get_aids(app_id: str):
+    try:
+        conn_str = (
+            "DRIVER={ODBC Driver 17 for SQL Server};"
+            f"SERVER={SQL_SERVER},{SQL_PORT};"
+            f"DATABASE={SQL_DB};"
+            f"UID={SQL_USER};"
+            f"PWD={SQL_PASSWORD};"
+            "Encrypt=yes;"
+            "TrustServerCertificate=yes;"
+        )
+        conn = pyodbc.connect(conn_str, timeout=10)
+        cursor = conn.cursor()
+        cursor.execute("SELECT DISTINCT Aid FROM dbo.t_ThousandEyes_Tests WITH (NOLOCK) WHERE AppIds = ?", app_id)
+        rows = cursor.fetchall()
+        conn.close()
+        if not rows:
+            raise ValueError(f"No AIDs found for App ID: {app_id}")
+        return [row[0] for row in rows]
+    except Exception as e:
+        logging.error(f"[SQL ERROR] {e}")
+        raise
+
+def fetch_labels(aid: int):
+    url = f"{BASE_URL}/groups?aid={aid}&format=json"
+    headers = {"Authorization": f"Bearer {TE_API_TOKEN}"}
+    try:
+        with httpx.Client(timeout=15, proxies=proxies) as client:
+            response = client.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json().get("groups", [])
+    except Exception as e:
+        logging.error(f"[API ERROR] fetching groups for AID {aid}: {e}")
+        return []
+
+def extract_distributed_labels(groups):
+    return [
+        {"groupId": g["groupId"], "name": g.get("name", "")}
+        for g in groups if "distributed_app_ids:" in g.get("name", "").lower()
+    ]
+
+def fetch_tests_for_group(group_id: int, aid: int):
+    url = f"{BASE_URL}/groups/{group_id}?aid={aid}&format=json"
+    headers = {"Authorization": f"Bearer {TE_API_TOKEN}"}
+    try:
+        with httpx.Client(timeout=15, proxies=proxies) as client:
+            response = client.get(url, headers=headers)
+            response.raise_for_status()
+            data = response.json().get("groups", [])
+            if isinstance(data, dict):
+                return data.get("tests", [])
+            elif isinstance(data, list) and data:
+                return data[0].get("tests", [])
+            return []
+    except Exception as e:
+        logging.error(f"[API ERROR] fetching tests for group {group_id}: {e}")
+        return []
+
+@app.post("/get-test-results")
+def get_test_results(request: AppIDRequest):
+    app_id = request.app_id.strip()
+    try:
+        start = time.time()
+        all_results = []
+        aids = get_aids(app_id)
+        logging.info(f"Found AIDs for AppId '{app_id}': {aids}")
+
+        for aid in aids:
+            groups = fetch_labels(aid)
+            filtered = extract_distributed_labels(groups)
+            logging.info(f"AID {aid}: {len(filtered)} distributed labels")
+
+            for label in filtered:
+                group_id = label["groupId"]
+                tests = fetch_tests_for_group(group_id, aid)
+                for t in tests:
+                    t["aid"] = aid
+                    t["groupId"] = group_id
+                    t["groupName"] = label["name"]
+                all_results.extend(tests)
+
+        return {
+            "app_id": app_id,
+            "aid_count": len(aids),
+            "total_tests": len(all_results),
+            "results": all_results,
+            "duration_sec": round(time.time() - start, 2)
+        }
+
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+
+
+SQL_SERVER=
+SQL_PORT=11001
+SQL_USER=TRIAGE_SSRS_SQL
+SQL_PASSWORD=hEbeDudraXU7Tow2
+SQL_DB=Toolbox
+
+TE_API_TOKEN=your_valid_token_here
+TE_API_BASE_URL=https://api.thousandeyes.com/v6
+
+HTTP_PROXY=http://your.proxy.server:port
+HTTPS_PROXY=http://your.proxy.server:port
+curl -X POST http://localhost:8080/get-test-results \
+  -H "Content-Type: application/json" \
+  -d '{"app_id": "NETOPS"}'
+
+
