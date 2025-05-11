@@ -1,0 +1,137 @@
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+import os
+import pymssql
+import httpx
+from dotenv import load_dotenv
+import logging
+import time
+
+# Load environment variables
+load_dotenv()
+
+# Logging configuration
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+
+# Environment variables
+SQL_SERVER = os.getenv("SQL_SERVER")
+SQL_USER = os.getenv("SQL_USER")
+SQL_PASSWORD = os.getenv("SQL_PASSWORD")
+SQL_DB = os.getenv("SQL_DB")
+TE_API_TOKEN = os.getenv("TE_API_TOKEN")
+TE_BASE_URL = os.getenv("TE_BASE_URL", "https://api.thousandeyes.com/v7")
+
+# FastAPI app
+app = FastAPI()
+
+# Request body model
+class AppIDRequest(BaseModel):
+    app_id: str
+
+# Fetch all AIDs for the given App ID
+def get_aids(app_id: str):
+    try:
+        conn = pymssql.connect(
+            server=SQL_SERVER,
+            user=SQL_USER,
+            password=SQL_PASSWORD,
+            database=SQL_DB,
+            conn_properties="TrustServerCertificate=yes"
+        )
+        cursor = conn.cursor(as_dict=True)
+        cursor.execute("SELECT aid FROM dbo.t_ThousandEyes_AccountGroups WHERE app_id = %s", (app_id,))
+        rows = cursor.fetchall()
+        conn.close()
+
+        if not rows:
+            raise ValueError(f"No AIDs found for App ID: {app_id}")
+        
+        aids = [row["aid"] for row in rows]
+        logging.info(f"AIDs for {app_id}: {aids}")
+        return aids
+    except Exception as e:
+        logging.error(f"Database error: {e}")
+        raise
+
+# Fetch latest test results for a single AID, handling rate limits
+def fetch_test_results(aid: str, client: httpx.Client):
+    url = f"{TE_BASE_URL}/tests.json?aid={aid}"
+    headers = {
+        "Authorization": f"Bearer {TE_API_TOKEN}",
+        "Accept": "application/json"
+    }
+
+    while True:
+        try:
+            response = client.get(url, headers=headers)
+            if "x-organization-rate-limit-remaining" in response.headers:
+                remaining = int(response.headers["x-organization-rate-limit-remaining"])
+                reset_time = int(response.headers.get("x-organization-rate-limit-reset", 1))
+                logging.info(f"Rate limit remaining: {remaining}")
+                if remaining < 2:
+                    logging.warning(f"Rate limit low. Sleeping for {reset_time} seconds...")
+                    time.sleep(reset_time + 1)
+                    continue
+
+            response.raise_for_status()
+            logging.info(f"Fetched results for AID: {aid}")
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 429:
+                reset = int(e.response.headers.get("x-organization-rate-limit-reset", 5))
+                logging.warning(f"429 Too Many Requests. Sleeping for {reset} seconds...")
+                time.sleep(reset + 1)
+                continue
+            logging.error(f"HTTP error: {e.response.status_code} - {e.response.text}")
+            raise
+        except Exception as e:
+            logging.error(f"Unexpected error: {e}")
+            raise
+
+# API endpoint: POST /get-test-results
+@app.post("/get-test-results")
+def get_test_results(request: AppIDRequest):
+    app_id = request.app_id.strip()
+    try:
+        aids = get_aids(app_id)
+        results = []
+
+        with httpx.Client(timeout=30) as client:
+            for aid in aids:
+                test_result = fetch_test_results(aid, client)
+                results.append({
+                    "aid": aid,
+                    "test_result": test_result
+                })
+
+        return {
+            "app_id": app_id,
+            "results": results
+        }
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+
+
+
+SQL_SERVER
+SQL_USER=
+SQL_PASSWORD=
+SQL_DB=
+
+TE_API_TOKEN=your_thousand_eyes_token
+TE_BASE_URL=https://api.thousandeyes.com/v7
+
+curl -X POST http://localhost:8080/get-test-results \
+  -H "Content-Type: application/json" \
+  -d '{"app_id": "APP-1234"}'
+
+uvicorn main:app --host 0.0.0.0 --port 8080
+
+requirments.txt
+fastapi
+uvicorn
+pymssql
+httpx
+python-dotenv
