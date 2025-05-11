@@ -1,0 +1,141 @@
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+import os
+import pyodbc
+import httpx
+from dotenv import load_dotenv
+import logging
+import traceback
+import time
+
+# Load environment
+load_dotenv()
+
+# Logging setup
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+
+# Env variables
+SQL_SERVER = os.getenv("SQL_SERVER")
+SQL_PORT = os.getenv("SQL_PORT", "1433")
+SQL_USER = os.getenv("SQL_USER")
+SQL_PASSWORD = os.getenv("SQL_PASSWORD")
+SQL_DB = os.getenv("SQL_DB")
+TE_API_TOKEN = os.getenv("TE_API_TOKEN")
+BASE_URL = os.getenv("TE_API_BASE_URL", "https://api.thousandeyes.com/v6")
+HTTP_PROXY = os.getenv("HTTP_PROXY")
+HTTPS_PROXY = os.getenv("HTTPS_PROXY")
+
+# Proxy setup
+proxies = {}
+if HTTP_PROXY and HTTPS_PROXY:
+    proxies = {
+        "http://": HTTP_PROXY,
+        "https://": HTTPS_PROXY
+    }
+
+# FastAPI app
+app = FastAPI()
+
+# Input model
+class AppIDRequest(BaseModel):
+    app_id: str
+
+# Step 1: Get AIDs from SQL
+def get_aid_from_sql(app_id: str):
+    try:
+        conn_str = (
+            f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+            f"SERVER={SQL_SERVER},{SQL_PORT};"
+            f"DATABASE={SQL_DB};"
+            f"UID={SQL_USER};"
+            f"PWD={SQL_PASSWORD};"
+            f"TrustServerCertificate=Yes;"
+        )
+        conn = pyodbc.connect(conn_str)
+        cursor = conn.cursor()
+        cursor.execute("SELECT DISTINCT Aid FROM dbo.t_ThousandEyes_Tests WITH (NOLOCK) WHERE AppIds = ?", app_id)
+        rows = cursor.fetchall()
+        conn.close()
+
+        if not rows:
+            raise ValueError(f"No AIDs found for App ID: {app_id}")
+        return [row[0] for row in rows]
+    except Exception as e:
+        logging.error(f"[SQL ERROR] {e}")
+        raise
+
+# Step 2: Fetch group labels from ThousandEyes
+def fetch_labels(aid: str):
+    url = f"{BASE_URL}/groups?aid={aid}&format=json"
+    headers = {"Authorization": f"Bearer {TE_API_TOKEN}"}
+    try:
+        with httpx.Client(timeout=15, proxies=proxies) as client:
+            response = client.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json().get("groups", [])
+    except Exception as e:
+        logging.error(f"[API ERROR] fetching groups for AID {aid}: {e}")
+        return []
+
+# Step 3: Extract labels with 'distributed_app_ids:'
+def extract_distributed_labels(labels):
+    return [
+        {"groupId": l["groupId"], "name": l.get("name", "")}
+        for l in labels if "distributed_app_ids:" in l.get("name", "").lower()
+    ]
+
+# Step 4: Fetch tests for a group ID
+def fetch_tests_for_group(group_id, aid):
+    url = f"{BASE_URL}/groups/{group_id}?aid={aid}&format=json"
+    headers = {"Authorization": f"Bearer {TE_API_TOKEN}"}
+    try:
+        with httpx.Client(timeout=15, proxies=proxies) as client:
+            response = client.get(url, headers=headers)
+            response.raise_for_status()
+            groups = response.json().get("groups", [])
+            if isinstance(groups, dict):
+                return groups.get("tests", [])
+            elif isinstance(groups, list) and groups:
+                return groups[0].get("tests", [])
+            return []
+    except Exception as e:
+        logging.error(f"[API ERROR] fetching tests for group {group_id}, aid {aid}: {e}")
+        return []
+
+# Main API
+@app.post("/get-test-results")
+def get_test_results(request: AppIDRequest):
+    app_id = request.app_id.strip()
+    try:
+        start = time.time()
+        all_results = []
+
+        # Get aid(s) for this app_id
+        aids = get_aid_from_sql(app_id)
+
+        for aid in aids:
+            labels = fetch_labels(aid)
+            distributed_labels = extract_distributed_labels(labels)
+
+            for label in distributed_labels:
+                group_id = label["groupId"]
+                tests = fetch_tests_for_group(group_id, aid)
+                for t in tests:
+                    t["aid"] = aid
+                    t["groupId"] = group_id
+                    t["groupName"] = label["name"]
+                all_results.extend(tests)
+
+        return {
+            "app_id": app_id,
+            "aid_count": len(aids),
+            "total_tests": len(all_results),
+            "results": all_results,
+            "duration_sec": round(time.time() - start, 2)
+        }
+
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal Server Error")
