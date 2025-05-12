@@ -1,0 +1,147 @@
+|| Phase || Task Description || Owner || Start Date || End Date || Status || Notes ||
+| 1. Access Provisioning | Provide Ops Manager API credentials (public/private key) | MongoDB Eng Team | TBD | TBD | In Progress | Required for Prometheus integration and automation |
+| 2. Enable Prometheus Exporter | Enable Prometheus integration in each MongoDB Ops Manager project | MongoDB Eng Team | TBD | TBD | Not Started | Expose `/metrics` via port 9216 using secure credentials |
+| 3. Generate Credentials | Generate & securely share Prometheus scrape credentials | MongoDB Eng Team | TBD | TBD | Not Started | Used by Grafana Agent to authenticate Prometheus scrape |
+| 4. Store Credentials Securely | Store credentials in password_file on agent host | Metrics Eng Team | TBD | TBD | Not Started | Path: `/etc/grafana-agent/secrets/` |
+| 5. Update Grafana Snippet | Update Fleet snippet config with Go template & HTTP SD configs | Metrics Eng Team | TBD | TBD | Not Started | Template var: `{{ .mongodb_project_id }}` |
+| 6. Script Dev & Validation | Create automation to assign template vars to agents | Metrics Eng Team | TBD | TBD | Completed | Uses MongoDB Ops API + Grafana Fleet API |
+| 7. Agent Target Mapping | Pick first node from cluster and treat as agent ID | Metrics Eng Team | TBD | TBD | In Progress | No validation against Fleet; assumed match |
+| 8. CI/CD Integration (Optional) | Automate onboarding of future projects via CI/CD | Metrics Eng Team | TBD | TBD | Planned | Future enhancement |
+| 9. Dashboards & Alerts | Build Grafana dashboards and Prometheus alerts | Metrics Eng Team | TBD | TBD | Planned | Visualize MongoDB metrics |
+| 10. Final Validation | Validate end-to-end visibility with all stakeholders | MongoDB + Metrics Teams | TBD | TBD | Not Started | Involve Product Owner + SRE Lead |
+
+
+Ownership boundaries are clear between MongoDB infrastructure enablement and metrics integration.
+	•	Automation is in place to ensure scalable onboarding of future MongoDB projects with minimal manual work.
+	•	Security and reusability are ensured using secure password files and Fleet template variables.
+	•	Time savings: Reduces multi-week manual onboarding to minutes per cluster.
+
+
+1. Integrate MongoDB Ops Manager into Prometheus
+   └── Enable Prometheus integration via Ops Manager UI/API
+   └── Generate and store credentials (username, password)
+
+2. Fetch Projects from MongoDB Ops Manager
+   └── Use Admin API: GET /groups
+   └── Collect all project IDs
+
+3. Fetch Cluster Nodes for Each Project
+   └── Use: GET /groups/{projectId}/automationConfig
+   └── Extract all node hostnames from 'processes' block
+
+4. Pick the First Node (hostname)
+   └── Sort the node list alphabetically or use default order
+   └── Select the first hostname as representative for the project
+
+5. Set agent_id Based on the Hostname
+   └── Use the selected hostname as the Grafana Fleet `agent_id`
+
+6. Create Template Variables for the Agent
+   └── Call: PUT /agent-management/agents/{agent_id}/template-variables
+       {
+         "is_mongodb_monitor": "true",
+         "mongodb_project_id": "<project_id>"
+       }
+
+7. Done
+   └── Grafana Agent Fleet will render correct scrape config via Go templating
+
+
+mermaid
+flowchart TD
+    A[Start: Integrate MongoDB Ops Manager into Prometheus] --> B[Fetch Projects via /groups API]
+    B --> C[Fetch Cluster Nodes via /automationConfig API]
+    C --> D[Pick the First Node (sorted hostname)]
+    D --> E[Use First Node Hostname as agent_id]
+    E --> F[Create Template Variables via Grafana Fleet API]
+    F --> G[Done: Fleet injects config using templating]
+
+    style A fill:#eef,stroke:#333,stroke-width:1px
+    style G fill:#cfc,stroke:#333,stroke-width:1px
+
+
+import os
+import requests
+import logging
+from requests.auth import HTTPDigestAuth
+from dotenv import load_dotenv
+
+# Load environment variables from .env
+load_dotenv()
+
+MOM_BASE_URL = os.getenv("MOM_BASE_URL")
+MOM_PUBLIC_KEY = os.getenv("MOM_PUBLIC_KEY")
+MOM_PRIVATE_KEY = os.getenv("MOM_PRIVATE_KEY")
+GRAFANA_API_KEY = os.getenv("GRAFANA_API_KEY")
+GRAFANA_FLEET_API = "https://grafana.com/api/agent-management"
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
+
+def validate_env():
+    missing = []
+    for var in ["MOM_BASE_URL", "MOM_PUBLIC_KEY", "MOM_PRIVATE_KEY", "GRAFANA_API_KEY"]:
+        if not os.getenv(var):
+            missing.append(var)
+    if missing:
+        raise EnvironmentError(f"Missing environment variables: {', '.join(missing)}")
+
+def fetch_projects():
+    url = f"{MOM_BASE_URL}/api/public/v1.0/groups"
+    resp = requests.get(url, auth=HTTPDigestAuth(MOM_PUBLIC_KEY, MOM_PRIVATE_KEY))
+    resp.raise_for_status()
+    return resp.json()["results"]
+
+def fetch_cluster_nodes(project_id):
+    url = f"{MOM_BASE_URL}/api/public/v1.0/groups/{project_id}/automationConfig"
+    resp = requests.get(url, auth=HTTPDigestAuth(MOM_PUBLIC_KEY, MOM_PRIVATE_KEY))
+    resp.raise_for_status()
+    return sorted({proc["hostname"] for proc in resp.json().get("processes", [])})
+
+def assign_template_variables(agent_id, project_id):
+    url = f"{GRAFANA_FLEET_API}/agents/{agent_id}/template-variables"
+    headers = {
+        "Authorization": f"Bearer {GRAFANA_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "agent_id": agent_id,
+        "template_variables": {
+            "is_mongodb_monitor": "true",
+            "mongodb_project_id": project_id
+        }
+    }
+    resp = requests.put(url, headers=headers, json=payload)
+    resp.raise_for_status()
+    logging.info(f"Assigned template variables to agent '{agent_id}' for project '{project_id}'")
+
+def main():
+    try:
+        validate_env()
+        projects = fetch_projects()
+
+        for proj in projects:
+            project_id = proj["id"]
+            project_name = proj.get("name", "Unnamed")
+            logging.info(f"Processing project: {project_name} ({project_id})")
+
+            nodes = fetch_cluster_nodes(project_id)
+            if not nodes:
+                logging.warning(f"No cluster nodes found for project {project_id}")
+                continue
+
+            first_node = nodes[0]
+            logging.info(f"Using first cluster node as agent ID: {first_node}")
+
+            assign_template_variables(first_node, project_id)
+
+    except Exception as e:
+        logging.error(f"Execution failed: {e}")
+
+if __name__ == "__main__":
+    main()
+
+
+MOM_BASE_URL=https://your-opsmanager-url
+MOM_PUBLIC_KEY=your-public-key
+MOM_PRIVATE_KEY=your-private-key
+GRAFANA_API_KEY=your-grafana-cloud-api-key
