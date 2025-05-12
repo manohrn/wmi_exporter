@@ -1,0 +1,86 @@
+
+Confluence Page Structure: End-to-End Documentation
+
+1. Page Title
+“MongoDB Ops Manager Monitoring via Prometheus & Grafana Agent – PoC Completion & Integration Plan”
+
+2. Executive Summary (1 paragraph)
+This initiative enables secure and automated Prometheus-based monitoring of MongoDB clusters managed by MongoDB Ops Manager. The integration was achieved using Grafana Agent Fleet Management to assign project-specific configurations dynamically. This approach reduces manual onboarding time, improves observability hygiene, and lays the foundation for scaling across all environments.
+3. Problem Statement
+Prior to this initiative, MongoDB monitoring required manual Prometheus configuration per cluster.
+Risk of misconfiguration, drift, and inconsistent metrics across environments.
+No central observability standard using Fleet.
+4. Solution Overview
+Tech Flow
+
+MongoDB Ops Manager → Prometheus → Grafana Agent (Fleet)
+MongoDB Ops Manager exposes /metrics via secure Prometheus integration.
+Prometheus or Grafana Agent scrapes metrics using HTTP SD (Service Discovery).
+Grafana Agent Fleet manages the scrape config using Go templates and per-agent template variables (e.g., mongodb_project_id).
+5. Architecture Diagram
+Include the PNG with MongoDB, Prometheus, Grafana Agent icons, showing the flow:
+
+Where metrics come from
+How first node hostname maps to an agent ID
+Where template variables get injected
+6. Proof-of-Concept Summary
+Item	Details
+Environment	Dev/QA cluster (list hostnames or projects used)
+Total Projects Tested	e.g., 4 MongoDB projects from Ops Manager
+Automation Success	Template vars injected for all matched agent IDs
+Metrics Visibility	Confirmed in Prometheus and Grafana (dashboards ready)
+Credentials	Stored in secure password_file on agents
+Example Project ID	61e6e34e93eac1632d39f457
+Scrape Interval Used	10s
+7. Task Ownership Table
+Insert the detailed table you already generated:
+
+Task Breakdown
+MongoDB Eng vs. Metrics Eng
+Status (e.g., Completed, In Progress, Blocked)
+Linked to timelines for rollout
+8. Automation Breakdown
+Python Script Responsibilities
+
+Fetch all MongoDB projects using /groups API
+Query /automationConfig per project
+Extract first cluster node hostname (sorted)
+Treat hostname as agent_id
+Inject two template variables to Fleet:
+is_mongodb_monitor = true
+mongodb_project_id = <project_id>
+Template Variable Impact
+
+Enables Go templating in snippet config:
+http_sd_configs:
+  - url: https://cloud.mongodb.com/prometheus/v1.0/groups/{{ .mongodb_project_id }}/discovery
+9. Sample Config Snippets
+Fleet Go template
+.env used for the script
+Python snippet (or link to the Git repo where it’s stored)
+10. Dashboard & Alerting Plan
+MongoDB metrics collected: CPU, memory, disk I/O, replication lag, operations
+Plan to create baseline dashboards
+Alert rules for:
+High replication lag
+Oplog nearing capacity
+Write lock %
+11. Future Roadmap
+Item	Owner	Timeline
+Auto-onboarding via CI/CD pipeline	Metrics Eng Team	Q3
+Dashboard templates in Grafana	Metrics Eng Team	Q2
+SRE training on usage	SRE Team	Q2
+Extend to all OCP/Prod clusters	MongoDB Team	Q3
+12. Key Stakeholders
+Role	Name	Team
+Project Lead	[You]	Observability
+MongoDB Lead	[DB Eng]	MongoDB Platform
+Fleet Lead	[Agent SME]	Infra Tools
+Product Owner	[Product Lead]	Platform
+13. Attachments
+Python automation script (uploaded or Git link)
+PowerPoint summary deck
+Architecture PNG + Mermaid source
+Go template snippet
+.env example (masked)
+Would you like me to generate a Markdown or Confluence wiki-ready file with this structure prefilled so you can copy-paste it directly?
