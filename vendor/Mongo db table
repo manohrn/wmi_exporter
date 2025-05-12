@@ -1,0 +1,77 @@
+Phase
+Task Description
+Owner
+Start Date
+End Date
+Status
+Notes
+1. Access Provisioning
+Provide Ops Manager API credentials (public/private key)
+MongoDB Eng Team
+[date]
+[date]
+In Progress
+Required for Prometheus integration and automation
+2. Enable Prometheus Exporter
+Enable Prometheus integration in each MongoDB Ops Manager project
+MongoDB Eng Team
+[date]
+[date]
+Not Started
+Should expose /metrics via port 9216 using secure credentials
+3. Generate Credentials
+Generate & securely share Prometheus scrape credentials
+MongoDB Eng Team
+[date]
+[date]
+Not Started
+Will be used by Prometheus or Grafana Agent to authenticate
+4. Store Credentials Securely
+Store username and password in password_file on the agent host
+Metrics Eng Team
+[date]
+[date]
+Not Started
+/etc/grafana-agent/secrets/ used for secure mounts
+5. Update Grafana Snippet
+Update Fleet snippet config with Go templating and HTTP SD configs
+Metrics Eng Team
+[date]
+[date]
+Not Started
+Includes project-specific {{ .mongodb_project_id }} templating
+6. Script Dev & Validation
+Create automation to assign template variables to correct agents
+Metrics Eng Team
+[date]
+[date]
+Completed
+Uses Ops Manager API to fetch project IDs and nodes
+7. Agent Target Mapping
+Pick first cluster node per project and assume it as agent ID
+Metrics Eng Team
+[date]
+[date]
+In Progress
+No validation against Fleet; used as-is for assignment
+8. CI/CD Integration (Opt.)
+Optionally integrate this into CI/CD pipeline for new projects
+Metrics Eng Team
+[date]
+[date]
+Planned
+For auto-assignment when MongoDB projects are onboarded
+9. Dashboards & Alerts
+Build Prometheus/Grafana dashboards and alerts for MongoDB metrics
+Metrics Eng Team
+[date]
+[date]
+Planned
+Depends on metrics and labels exposed
+10. Final Validation
+Validate end-to-end: MongoDB → Prometheus → Grafana visibility
+Joint (Mongo + Metrics)
+[date]
+[date]
+
+
