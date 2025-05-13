@@ -1,0 +1,107 @@
+import os
+import logging
+from fastapi import FastAPI, HTTPException, Body
+from dotenv import load_dotenv
+import pymssql
+import requests
+
+load_dotenv()
+
+# Logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+logger = logging.getLogger(__name__)
+
+# Env vars
+DB_SERVER = os.getenv("DB_SERVER")
+DB_PORT = int(os.getenv("DB_PORT", "1433"))
+DB_USER = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+DB_NAME = os.getenv("DB_NAME")
+TE_API_TOKEN = os.getenv("TE_API_TOKEN")
+TE_API_BASE_URL = os.getenv("TE_API_BASE_URL", "https://api.thousandeyes.com/v6").rstrip("/")
+HTTP_PROXY = os.getenv("HTTP_PROXY")
+HTTPS_PROXY = os.getenv("HTTPS_PROXY")
+
+proxies = {}
+if HTTP_PROXY:
+    proxies["http"] = HTTP_PROXY
+if HTTPS_PROXY:
+    proxies["https"] = HTTPS_PROXY
+
+# Mapping test types to v6 endpoints
+TYPE_TO_ENDPOINT = {
+    "agent-to-server": "net/metrics",
+    "http-server": "web/http-server",
+    "page-load": "web/page-load",
+    "web-transactions": "web/transactions"
+}
+
+# Keys to remove from response
+UNWANTED_KEYS = {"_links", "createdBy", "modifiedBy", "createdDate", "modifiedDate", "savedEvent"}
+
+app = FastAPI()
+
+def remove_extraneous_fields(obj):
+    if isinstance(obj, dict):
+        return {k: remove_extraneous_fields(v) for k, v in obj.items() if k not in UNWANTED_KEYS}
+    elif isinstance(obj, list):
+        return [remove_extraneous_fields(i) for i in obj]
+    return obj
+
+@app.post("/get-test-results")
+def get_test_results(payload: dict = Body(..., example={"app_id": "NETOPS"})):
+    app_id = payload.get("app_id")
+    if not app_id:
+        raise HTTPException(status_code=422, detail="Missing app_id")
+
+    try:
+        with pymssql.connect(server=DB_SERVER, port=DB_PORT, user=DB_USER,
+                             password=DB_PASSWORD, database=DB_NAME) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT DISTINCT Aid, TestType, TestId 
+                    FROM dbo.t_ThousandEyes_Tests WITH (NOLOCK) 
+                    WHERE AppIds = %s
+                """, (app_id,))
+                rows = cursor.fetchall()
+    except Exception as e:
+        logger.error("Database error: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to query database")
+
+    if not rows:
+        raise HTTPException(status_code=404, detail=f"No tests found for app_id '{app_id}'")
+
+    # Deduplicate and limit to top 10
+    unique = {(aid, test_id): (aid, test_type.lower(), test_id)
+              for aid, test_type, test_id in rows if test_type.lower() in TYPE_TO_ENDPOINT}
+    top_10 = list(unique.values())[:10]
+
+    headers = {
+        "Authorization": f"Bearer {TE_API_TOKEN}",
+        "Accept": "application/json"
+    }
+
+    results = []
+    for aid, test_type, test_id in top_10:
+        endpoint = TYPE_TO_ENDPOINT[test_type]
+        url = f"{TE_API_BASE_URL}/{endpoint}/{test_id}?aid={aid}&format=json"
+
+        try:
+            resp = requests.get(url, headers=headers, proxies=proxies, timeout=15)
+            resp.raise_for_status()
+            json_data = resp.json()
+            trimmed = remove_extraneous_fields(json_data)
+            results.append({
+                "aid": aid,
+                "testId": test_id,
+                "testType": test_type,
+                "result": trimmed
+            })
+        except requests.RequestException as e:
+            logger.error("Error fetching result for testId %s (aid %s): %s", test_id, aid, e)
+
+    return {
+        "app_id": app_id,
+        "test_result_count": len(results),
+        "results": results
+    }
