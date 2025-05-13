@@ -1,0 +1,148 @@
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+import os
+import pymssql
+import httpx
+from dotenv import load_dotenv
+import logging
+import traceback
+import time
+
+# Load environment variables
+load_dotenv()
+
+# Proxy config for httpx (used automatically via env)
+os.environ["HTTP_PROXY"] = os.getenv("HTTP_PROXY", "")
+os.environ["HTTPS_PROXY"] = os.getenv("HTTPS_PROXY", "")
+
+# Logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+
+# Config
+SQL_SERVER = os.getenv("SQL_SERVER")
+SQL_PORT = int(os.getenv("SQL_PORT", "1433"))
+SQL_USER = os.getenv("SQL_USER")
+SQL_PASSWORD = os.getenv("SQL_PASSWORD")
+SQL_DB = os.getenv("SQL_DB")
+TE_API_TOKEN = os.getenv("TE_API_TOKEN")
+BASE_URL = os.getenv("TE_API_BASE_URL", "https://api.thousandeyes.com/v6")
+
+V6_TEST_TYPES = [
+    "agent-to-server", "agent-to-agent", "bgp", "dns-trace",
+    "page-load", "http-server", "network", "path-visualization"
+]
+
+app = FastAPI()
+
+class AppIDRequest(BaseModel):
+    app_id: str
+
+def get_aids(app_id: str):
+    try:
+        conn = pymssql.connect(
+            server=SQL_SERVER,
+            port=SQL_PORT,
+            user=SQL_USER,
+            password=SQL_PASSWORD,
+            database=SQL_DB,
+            timeout=10
+        )
+        cursor = conn.cursor()
+        cursor.execute("SELECT DISTINCT Aid FROM dbo.t_ThousandEyes_Tests WITH (NOLOCK) WHERE AppIds = %s", (app_id,))
+        rows = cursor.fetchall()
+        conn.close()
+        if not rows:
+            raise ValueError(f"No AIDs found for App ID: {app_id}")
+        return [row[0] for row in rows]
+    except Exception as e:
+        logging.error(f"[SQL ERROR] {e}")
+        raise
+
+def fetch_labels(aid: int):
+    url = f"{BASE_URL}/groups?aid={aid}&format=json"
+    headers = {"Authorization": f"Bearer {TE_API_TOKEN}"}
+    try:
+        with httpx.Client(timeout=15) as client:
+            response = client.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json().get("groups", [])
+    except Exception as e:
+        logging.error(f"[API ERROR] fetching groups for AID {aid}: {e}")
+        return []
+
+def fetch_tests(group_id: int, aid: int):
+    url = f"{BASE_URL}/groups/{group_id}?aid={aid}&format=json"
+    headers = {"Authorization": f"Bearer {TE_API_TOKEN}"}
+    try:
+        with httpx.Client(timeout=15) as client:
+            response = client.get(url, headers=headers)
+            response.raise_for_status()
+            data = response.json().get("groups", [])
+            if isinstance(data, dict):
+                return data.get("tests", [])
+            elif isinstance(data, list) and data:
+                return data[0].get("tests", [])
+            return []
+    except Exception as e:
+        logging.error(f"[API ERROR] fetching tests for group {group_id}: {e}")
+        return []
+
+def fetch_test_results_v6(test_id: int, test_type: str, aid: int):
+    url = f"{BASE_URL}/test-results/{test_id}/{test_type}?aid={aid}&window=5m&format=json"
+    headers = {"Authorization": f"Bearer {TE_API_TOKEN}"}
+    try:
+        with httpx.Client(timeout=15) as client:
+            response = client.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json()
+    except Exception as e:
+        logging.error(f"[API ERROR] TestID {test_id} Type {test_type}: {e}")
+        return {"error": str(e)}
+
+@app.post("/get-test-results")
+def get_test_results(request: AppIDRequest):
+    app_id = request.app_id.strip()
+    try:
+        start = time.time()
+        results = []
+        aids = get_aids(app_id)
+
+        for aid in aids:
+            groups = fetch_labels(aid)
+            filtered_groups = [g for g in groups if "distributed_app_ids:" in g.get("name", "").lower()]
+
+            for group in filtered_groups:
+                group_id = group["groupId"]
+                group_name = group.get("name", "")
+                tests = fetch_tests(group_id, aid)
+
+                for t in tests:
+                    test_id = t.get("testId")
+                    raw_type = t.get("type", "")
+                    test_type = raw_type.replace("_", "-").lower()
+
+                    if test_type in V6_TEST_TYPES:
+                        result = fetch_test_results_v6(test_id, test_type, aid)
+                        results.append({
+                            "testId": test_id,
+                            "testType": test_type,
+                            "testName": t.get("testName"),
+                            "aid": aid,
+                            "groupId": group_id,
+                            "groupName": group_name,
+                            "latestResult": result
+                        })
+
+        return {
+            "app_id": app_id,
+            "aid_count": len(aids),
+            "test_result_count": len(results),
+            "results": results,
+            "duration_sec": round(time.time() - start, 2)
+        }
+
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal Server Error")
