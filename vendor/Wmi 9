@@ -1,0 +1,125 @@
+import os
+import logging
+from fastapi import FastAPI, HTTPException, Body
+from dotenv import load_dotenv
+import pymssql
+import requests
+
+load_dotenv()
+
+# Logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+logger = logging.getLogger(__name__)
+
+# Environment variables
+DB_SERVER = os.getenv("DB_SERVER")
+DB_PORT = int(os.getenv("DB_PORT", "1433"))
+DB_USER = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+DB_NAME = os.getenv("DB_NAME")
+TE_API_TOKEN = os.getenv("TE_API_TOKEN")
+TE_API_BASE_URL = os.getenv("TE_API_BASE_URL", "https://api.thousandeyes.com/v6").rstrip("/")
+HTTP_PROXY = os.getenv("HTTP_PROXY")
+HTTPS_PROXY = os.getenv("HTTPS_PROXY")
+
+proxies = {}
+if HTTP_PROXY:
+    proxies["http"] = HTTP_PROXY
+if HTTPS_PROXY:
+    proxies["https"] = HTTPS_PROXY
+
+# Type-specific endpoint and field mapping
+TYPE_TO_ENDPOINT = {
+    "agent-to-server": "net/metrics",
+    "http-server": "web/http-server",
+    "page-load": "web/page-load",
+    "web-transactions": "web/transactions"
+}
+
+FAILURE_KEYS = {
+    "agent-to-server": "loss",
+    "http-server": "responseCode",
+    "page-load": "numErrors",
+    "web-transactions": "transactionTime"
+}
+
+UNWANTED_KEYS = {"_links", "createdBy", "modifiedBy", "createdDate", "modifiedDate", "savedEvent"}
+
+app = FastAPI()
+
+def remove_unwanted(data):
+    if isinstance(data, dict):
+        return {k: remove_unwanted(v) for k, v in data.items() if k not in UNWANTED_KEYS}
+    elif isinstance(data, list):
+        return [remove_unwanted(item) for item in data]
+    return data
+
+@app.post("/get-test-results")
+def get_test_results(payload: dict = Body(..., example={"app_id": "NETOPS"})):
+    app_id = payload.get("app_id")
+    if not app_id:
+        raise HTTPException(status_code=422, detail="Missing app_id")
+
+    try:
+        with pymssql.connect(server=DB_SERVER, port=DB_PORT, user=DB_USER,
+                             password=DB_PASSWORD, database=DB_NAME) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT TOP 10 DISTINCT Aid, TestType, TestId, TestName 
+                    FROM dbo.t_ThousandEyes_Tests WITH (NOLOCK) 
+                    WHERE AppIds = %s
+                """, (app_id,))
+                rows = cursor.fetchall()
+    except Exception as e:
+        logger.error("Database error: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to query database")
+
+    if not rows:
+        raise HTTPException(status_code=404, detail=f"No tests found for app_id '{app_id}'")
+
+    headers = {
+        "Authorization": f"Bearer {TE_API_TOKEN}",
+        "Accept": "application/json"
+    }
+
+    results = []
+    for aid, test_type, test_id, test_name in rows:
+        test_type = test_type.lower()
+        if test_type not in TYPE_TO_ENDPOINT:
+            continue
+
+        endpoint = TYPE_TO_ENDPOINT[test_type]
+        key_field = FAILURE_KEYS[test_type]
+        url = f"{TE_API_BASE_URL}/{endpoint}/{test_id}?aid={aid}&format=json"
+
+        try:
+            resp = requests.get(url, headers=headers, proxies=proxies, timeout=15)
+            resp.raise_for_status()
+            json_data = resp.json()
+            clean_data = remove_unwanted(json_data)
+
+            # Extract desired value field
+            value = None
+            if test_type == "agent-to-server":
+                value = clean_data.get("metrics", [{}])[0].get(key_field)
+            elif test_type in ("http-server", "page-load", "web-transactions"):
+                # fallback to look in nested structure
+                test_obj = list(clean_data.values())[0]
+                if isinstance(test_obj, list) and test_obj:
+                    value = test_obj[0].get(key_field)
+
+            results.append({
+                "aid": aid,
+                "testId": test_id,
+                "testName": test_name,
+                key_field: value
+            })
+
+        except requests.RequestException as e:
+            logger.error("Error fetching result for test %s: %s", test_id, e)
+
+    return {
+        "app_id": app_id,
+        "test_result_count": len(results),
+        "results": results
+    }
