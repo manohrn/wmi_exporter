@@ -1,0 +1,109 @@
+import os
+import logging
+from fastapi import FastAPI, HTTPException, Body
+from dotenv import load_dotenv
+import pymssql
+import requests
+
+load_dotenv()
+
+# Logging setup
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+logger = logging.getLogger(__name__)
+
+# Environment variables
+DB_SERVER = os.getenv("DB_SERVER")
+DB_PORT = int(os.getenv("DB_PORT", "1433"))
+DB_USER = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+DB_NAME = os.getenv("DB_NAME")
+TE_API_TOKEN = os.getenv("TE_API_TOKEN")
+TE_API_BASE_URL = os.getenv("TE_API_BASE_URL", "https://api.thousandeyes.com/v6").rstrip("/")
+HTTP_PROXY = os.getenv("HTTP_PROXY")
+HTTPS_PROXY = os.getenv("HTTPS_PROXY")
+
+proxies = {}
+if HTTP_PROXY:
+    proxies["http"] = HTTP_PROXY
+if HTTPS_PROXY:
+    proxies["https"] = HTTPS_PROXY
+
+# Mapping test type to endpoint and metric key
+TYPE_TO_ENDPOINT = {
+    "agent-to-server": ("net/metrics", "loss"),
+    "http-server": ("web/http-server", "responseCode"),
+    "page-load": ("web/page-load", "numErrors"),
+    "web-transactions": ("web/transactions", "transactionTime")
+}
+
+app = FastAPI()
+
+@app.post("/get-test-results")
+def get_test_results(payload: dict = Body(..., example={"app_id": "NETOPS"})):
+    app_id = payload.get("app_id")
+    if not app_id:
+        raise HTTPException(status_code=422, detail="Missing app_id")
+
+    # Query top 10 test metadata
+    try:
+        with pymssql.connect(server=DB_SERVER, port=DB_PORT, user=DB_USER,
+                             password=DB_PASSWORD, database=DB_NAME) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT TOP 10 Aid, TestType, TestId, TestName
+                    FROM (
+                        SELECT DISTINCT Aid, TestType, TestId, TestName
+                        FROM dbo.t_ThousandEyes_Tests WITH (NOLOCK)
+                        WHERE AppIds = %s AND Enabled = 1
+                    ) AS unique_tests
+                """, (app_id,))
+                rows = cursor.fetchall()
+    except Exception as e:
+        logger.error("Database error: %s", e)
+        raise HTTPException(status_code=500, detail="Database query failed")
+
+    if not rows:
+        raise HTTPException(status_code=404, detail=f"No tests found for app_id '{app_id}'")
+
+    headers = {
+        "Authorization": f"Bearer {TE_API_TOKEN}",
+        "Accept": "application/json"
+    }
+
+    results = []
+    for aid, test_type, test_id, test_name in rows:
+        test_type = test_type.lower()
+        if test_type not in TYPE_TO_ENDPOINT:
+            continue
+
+        endpoint, metric_key = TYPE_TO_ENDPOINT[test_type]
+        url = f"{TE_API_BASE_URL}/{endpoint}/{test_id}?aid={aid}&format=json"
+
+        try:
+            response = requests.get(url, headers=headers, proxies=proxies, timeout=15)
+            response.raise_for_status()
+            data = response.json()
+        except requests.RequestException as e:
+            logger.error("Error fetching result for test %s: %s", test_id, e)
+            continue
+
+        # Safely navigate to the metric value from the correct array
+        metric_value = None
+        for section in data.values():
+            if isinstance(section, list) and section:
+                metric_value = section[0].get(metric_key, 0.0)
+                break
+
+        # Final trimmed output
+        results.append({
+            "aid": aid,
+            "testId": test_id,
+            "testName": test_name,
+            metric_key: metric_value
+        })
+
+    return {
+        "app_id": app_id,
+        "test_result_count": len(results),
+        "results": results
+    }
