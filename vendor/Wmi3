@@ -1,0 +1,122 @@
+import os
+import logging
+from fastapi import FastAPI, HTTPException, Body
+from pydantic import BaseModel
+from dotenv import load_dotenv
+import pymssql
+import httpx
+import asyncio
+
+# Load environment
+load_dotenv()
+
+# Logging setup
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
+
+# Configs from .env
+DB_SERVER = os.getenv("DB_SERVER")
+DB_PORT = int(os.getenv("DB_PORT", "1433"))
+DB_USER = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+DB_NAME = os.getenv("DB_NAME")
+TE_API_TOKEN = os.getenv("TE_API_TOKEN")
+TE_API_BASE_URL = os.getenv("TE_API_BASE_URL").rstrip("/")
+HTTP_PROXY = os.getenv("HTTP_PROXY")
+HTTPS_PROXY = os.getenv("HTTPS_PROXY")
+
+proxies = {}
+if HTTP_PROXY:
+    proxies["http://"] = HTTP_PROXY
+if HTTPS_PROXY:
+    proxies["https://"] = HTTPS_PROXY
+
+# Map test types to correct v6 endpoints
+TEST_TYPE_ENDPOINTS = {
+    "agent-to-server": "net/metrics",
+    "http-server": "web/http-server",
+    "page-load": "web/page-load",
+    "web-transactions": "web/transactions"
+}
+
+# FastAPI init
+app = FastAPI()
+
+class AppIDRequest(BaseModel):
+    app_id: str
+
+def strip_metadata(data):
+    if isinstance(data, dict):
+        return {k: strip_metadata(v) for k, v in data.items()
+                if k not in ("_links", "links", "createdBy", "modifiedBy", "createdDate", "modifiedDate")}
+    elif isinstance(data, list):
+        return [strip_metadata(item) for item in data]
+    return data
+
+def fetch_from_db(app_id: str):
+    try:
+        with pymssql.connect(server=DB_SERVER, port=DB_PORT, user=DB_USER,
+                             password=DB_PASSWORD, database=DB_NAME) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT DISTINCT Aid, TestType, TestId
+                    FROM dbo.t_ThousandEyes_Tests WITH (NOLOCK)
+                    WHERE AppIds = %s
+                """, (app_id,))
+                return cursor.fetchall()
+    except Exception as e:
+        logger.error("DB query failed: %s", e)
+        raise
+
+async def fetch_result(session, aid, test_id, test_type):
+    endpoint = TEST_TYPE_ENDPOINTS.get(test_type)
+    if not endpoint:
+        return None
+    url = f"{TE_API_BASE_URL}/v6/{endpoint}/{test_id}?aid={aid}&format=json"
+    try:
+        resp = await session.get(url)
+        resp.raise_for_status()
+        return {
+            "aid": aid,
+            "testId": test_id,
+            "testType": test_type,
+            "result": strip_metadata(resp.json())
+        }
+    except Exception as e:
+        logger.error("Error fetching result for test %s: %s", test_id, e)
+        return None
+
+@app.post("/get-test-results")
+async def get_test_results(payload: AppIDRequest):
+    app_id = payload.app_id.strip()
+    logger.info("Processing request for app_id: %s", app_id)
+
+    try:
+        records = await asyncio.to_thread(fetch_from_db, app_id)
+    except:
+        raise HTTPException(status_code=500, detail="DB error")
+
+    tests = [
+        {"aid": aid, "test_id": test_id, "test_type": test_type.lower()}
+        for aid, test_type, test_id in records
+        if test_type.lower() in TEST_TYPE_ENDPOINTS
+    ]
+
+    # Dedup and take top 10
+    unique = {(t["aid"], t["test_id"]): t for t in tests}
+    selected_tests = list(unique.values())[:10]
+
+    headers = {
+        "Authorization": f"Bearer {TE_API_TOKEN}",
+        "Accept": "application/json"
+    }
+
+    async with httpx.AsyncClient(timeout=20.0, proxies=proxies) as client:
+        tasks = [fetch_result(client, t["aid"], t["test_id"], t["test_type"]) for t in selected_tests]
+        results = await asyncio.gather(*tasks)
+
+    return {
+        "app_id": app_id,
+        "test_count": len([r for r in results if r]),
+        "results": [r for r in results if r]
+    }
