@@ -1,0 +1,125 @@
+import os
+import logging
+import pymssql
+import requests
+from fastapi import FastAPI, HTTPException
+
+# Configure logging for the application (timestamp, level, message)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logger = logging.getLogger(__name__)
+
+# Read configuration from environment (to be set in production environment)
+DB_SERVER = os.getenv("DB_SERVER")       # e.g., "db.example.com" or "localhost"
+DB_USER = os.getenv("DB_USER")           # database username
+DB_PASSWORD = os.getenv("DB_PASSWORD")   # database password
+DB_NAME = os.getenv("DB_NAME")           # target database name
+TE_API_TOKEN = os.getenv("TE_API_TOKEN") # ThousandEyes API Bearer token
+
+# Initialize FastAPI app
+app = FastAPI()
+
+@app.get("/applications/{app_id}/test-results")
+def get_app_test_results(app_id: int):
+    """Retrieve test results for all relevant ThousandEyes tests for the given application ID."""
+    # 1. Retrieve account IDs (AIDs) from the SQL Server DB for the given application ID
+    try:
+        with pymssql.connect(server=DB_SERVER, user=DB_USER, password=DB_PASSWORD, database=DB_NAME) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT account_id FROM app_account_mapping WHERE app_id = %s", (app_id,))
+                rows = cursor.fetchall()
+    except Exception as db_err:
+        logger.error("Database connection or query failed: %s", db_err)
+        # Internal server error if DB fails
+        raise HTTPException(status_code=500, detail="Database error while retrieving account IDs")
+    # If no account IDs found for the given app_id, return empty result or 404
+    if not rows:
+        logger.warning("No ThousandEyes account IDs found for app_id=%s", app_id)
+        return {"app_id": app_id, "tests": []}
+    
+    # Extract AIDs from query result
+    account_ids = [row[0] for row in rows]
+    logger.info("Found %d account ID(s) for app_id=%s: %s", len(account_ids), app_id, account_ids)
+    
+    # Prepare for API calls
+    base_url = "https://api.thousandeyes.com/v7"
+    headers = {"Authorization": f"Bearer {TE_API_TOKEN}"}
+    allowed_types = {"agent-to-server", "http-server", "page-load", "web-transactions"}
+    results_output = []  # to accumulate results per test
+    
+    # 2. For each account ID, fetch tests from ThousandEyes API
+    for aid in account_ids:
+        try:
+            # Call /tests endpoint with account group ID
+            tests_url = f"{base_url}/tests?aid={aid}&format=json"
+            resp = requests.get(tests_url, headers=headers, timeout=10)
+            resp.raise_for_status()  # raise an error if status code is not 200
+        except requests.RequestException as api_err:
+            logger.error("Failed to fetch tests for account %s: %s", aid, api_err)
+            # Skip this account on error (continue to next AID)
+            continue
+        # Parse JSON response
+        try:
+            tests_data = resp.json()
+        except ValueError:
+            logger.error("Invalid JSON response for tests list (account %s)", aid)
+            continue
+        
+        # The response is expected to contain an array of tests (under a 'tests' key in v7 HAL JSON)
+        tests_list = tests_data.get("tests") or tests_data.get("test") or tests_data
+        if not isinstance(tests_list, list):
+            logger.error("Unexpected format for tests list (account %s): %s", aid, type(tests_list))
+            continue
+        logger.info("Retrieved %d tests from account %s", len(tests_list), aid)
+        
+        # Filter tests by the allowed types
+        filtered_tests = [t for t in tests_list if t.get("type") in allowed_types]
+        logger.info("Filtered down to %d relevant tests in account %s (types: %s)", 
+                    len(filtered_tests), aid, allowed_types)
+        
+        # 3. For each relevant test, fetch the latest 5-minute results
+        for test in filtered_tests:
+            test_id = test.get("testId")
+            test_type = test.get("type")
+            test_name = test.get("testName")
+            if not test_id or not test_type:
+                continue  # skip if essential data is missing
+            # Determine the appropriate endpoint path segment for the test type
+            # (agent-to-server tests use the "network" results endpoint)
+            endpoint_segment = "network" if test_type == "agent-to-server" else test_type
+            results_url = f"{base_url}/test-results/{test_id}/{endpoint_segment}?window=5m&format=json"
+            # Include account ID in results request if needed (for clarity and multi-account scenarios)
+            results_url += f"&aid={aid}"
+            try:
+                res = requests.get(results_url, headers=headers, timeout=10)
+                res.raise_for_status()
+            except requests.RequestException as api_err:
+                logger.error("Failed to fetch results for test %s (account %s): %s", test_id, aid, api_err)
+                # Skip this test on error
+                continue
+            # Parse the results JSON
+            try:
+                result_payload = res.json()
+            except ValueError:
+                logger.error("Invalid JSON in test results for test %s (account %s)", test_id, aid)
+                continue
+            # Remove any '_links' fields from the result payload recursively
+            def strip_links(data):
+                if isinstance(data, dict):
+                    # Use dictionary comprehension to exclude any key named 'links' or '_links'
+                    return {k: strip_links(v) for k, v in data.items() if k not in ('_links', 'links')}
+                elif isinstance(data, list):
+                    return [strip_links(item) for item in data]
+                else:
+                    return data
+            clean_result = strip_links(result_payload)
+            # Construct the output entry for this test
+            results_output.append({
+                "aid": aid,
+                "testId": test_id,
+                "testName": test_name,
+                "type": test_type,
+                "result": clean_result
+            })
+    
+    # 4. Return the assembled results as JSON
+    return {"app_id": app_id, "tests": results_output}
