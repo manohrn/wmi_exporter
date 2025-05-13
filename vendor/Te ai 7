@@ -1,0 +1,170 @@
+import os
+import logging
+from fastapi import FastAPI, HTTPException, Body
+from dotenv import load_dotenv
+import pymssql
+import requests
+
+# Load environment variables from .env file
+load_dotenv()
+
+# Configure logging for the application
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
+
+# Read configuration from environment
+DB_SERVER = os.getenv("DB_SERVER")
+DB_PORT = os.getenv("DB_PORT")
+DB_USER = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+DB_NAME = os.getenv("DB_NAME")
+TE_API_TOKEN = os.getenv("TE_API_TOKEN")
+TE_API_BASE_URL = os.getenv("TE_API_BASE_URL")
+HTTP_PROXY = os.getenv("HTTP_PROXY")
+HTTPS_PROXY = os.getenv("HTTPS_PROXY")
+
+# Basic validation of critical config
+if not all([DB_SERVER, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME]):
+    logger.error("Database configuration is incomplete or missing in environment.")
+    raise RuntimeError("Database configuration not found.")
+if not TE_API_TOKEN or not TE_API_BASE_URL:
+    logger.error("ThousandEyes API configuration is incomplete or missing in environment.")
+    raise RuntimeError("ThousandEyes API configuration not found.")
+
+# Set up proxies for requests if provided
+proxies = {}
+if HTTP_PROXY:
+    proxies["http"] = HTTP_PROXY
+if HTTPS_PROXY:
+    proxies["https"] = HTTPS_PROXY
+
+# Prepare FastAPI app
+app = FastAPI()
+
+# Utility function to remove '_links' and 'links' from nested dictionaries/lists
+def remove_links(data):
+    if isinstance(data, dict):
+        return {k: remove_links(v) for k, v in data.items() if k not in ("_links", "links")}
+    if isinstance(data, list):
+        return [remove_links(item) for item in data]
+    # For other data types (str, int, etc.), return as-is
+    return data
+
+# Define the request model (for documentation and validation)
+# Here we use Body parameter directly for simplicity, but a Pydantic model could also be used.
+@app.post("/get-test-results")
+def get_test_results(payload: dict = Body(..., example={"app_id": "NETOPS"})):
+    """Fetch test metadata and latest results for a given application ID (AppID)."""
+    app_id = payload.get("app_id")
+    if not app_id:
+        # If app_id is missing in the request body
+        raise HTTPException(status_code=422, detail="app_id is required in the request body.")
+    logger.info("Received request for app_id: %s", app_id)
+
+    # Connect to MSSQL database and retrieve account IDs for the given app_id
+    try:
+        with pymssql.connect(server=DB_SERVER, port=int(DB_PORT), user=DB_USER,
+                              password=DB_PASSWORD, database=DB_NAME) as conn:
+            with conn.cursor() as cursor:
+                # **NOTE**: Replace the table/column names with actual names in your database schema.
+                query = "SELECT account_id FROM AppAccountMapping WHERE app_id = %s"
+                cursor.execute(query, (app_id,))
+                rows = cursor.fetchall()
+    except Exception as db_err:
+        logger.error("Database error while retrieving account IDs: %s", db_err)
+        raise HTTPException(status_code=500, detail="Failed to retrieve account mappings from database.")
+
+    # Extract account IDs from query result
+    account_ids = [row[0] for row in rows] if rows else []
+    logger.info("Found account IDs for app_id '%s': %s", app_id, account_ids)
+    if not account_ids:
+        # No accounts found for the given app_id
+        raise HTTPException(status_code=404, detail=f"No account IDs found for app_id '{app_id}'")
+
+    # Prepare the response structure
+    result_data = {
+        "app_id": app_id,
+        "accounts": []
+    }
+
+    # Set up the common headers for ThousandEyes API (bearer token for auth)
+    headers = {"Authorization": f"Bearer {TE_API_TOKEN}"}
+    # We'll also request JSON explicitly (ThousandEyes v7 uses HAL+JSON by default)
+    headers["Accept"] = "application/json"
+
+    # Iterate through each account ID and fetch tests and results
+    for aid in account_ids:
+        account_entry = {"account_id": aid, "tests": []}
+        logger.info("Fetching tests for account ID: %s", aid)
+        # Call ThousandEyes API to list tests for this account group
+        tests_url = f"{TE_API_BASE_URL.rstrip('/')}/tests"
+        try:
+            resp = requests.get(tests_url, headers=headers, params={"aid": str(aid)}, proxies=proxies, timeout=15)
+            resp.raise_for_status()
+        except requests.RequestException as api_err:
+            logger.error("Failed to fetch tests for account %s from ThousandEyes API: %s", aid, api_err)
+            # Propagate as a Bad Gateway error (since the failure is from an upstream service)
+            raise HTTPException(status_code=502, detail=f"Error retrieving tests for account ID {aid} from ThousandEyes API.")
+        # Parse test list response
+        tests_json = resp.json()
+        # The API returns the list of tests in a 'tests' field (with potential additional metadata)
+        all_tests = tests_json.get("tests", tests_json)  # if the response is already a list, handle that too
+        if not isinstance(all_tests, list):
+            logger.error("Unexpected format for tests list (account %s): %s", aid, tests_json)
+            raise HTTPException(status_code=502, detail=f"Unexpected response format when listing tests for account ID {aid}.")
+
+        # Filter tests by desired types
+        filtered_tests = [t for t in all_tests if str(t.get("type")).lower() in 
+                          ("agent-to-server", "http-server", "page-load", "web-transactions")]
+        logger.info("Filtering tests for account %s: %d out of %d tests match specified types.", 
+                    aid, len(filtered_tests), len(all_tests))
+
+        # Fetch results for each filtered test
+        for test in filtered_tests:
+            test_id = test.get("testId")
+            test_type = str(test.get("type")).lower()
+            if not test_id or not test_type:
+                # If test data is missing expected fields, skip it
+                logger.debug("Skipping test due to missing ID or type: %s", test)
+                continue
+            # Determine the appropriate results endpoint path for this test type
+            if test_type == "agent-to-server":
+                results_path = "network"
+            elif test_type == "http-server":
+                results_path = "http-server"
+            elif test_type == "page-load":
+                results_path = "page-load"
+            elif test_type == "web-transactions":
+                results_path = "web-transactions"
+            else:
+                # Should not happen due to filtering, but just in case
+                logger.debug("Skipping unsupported test type: %s", test_type)
+                continue
+
+            results_url = f"{TE_API_BASE_URL.rstrip('/')}/test-results/{test_id}/{results_path}"
+            logger.debug("Fetching results for test ID %s (type: %s) from %s", test_id, test_type, results_url)
+            try:
+                resp = requests.get(results_url, headers=headers, params={"aid": str(aid), "window": "5m"},
+                                    proxies=proxies, timeout=15)
+                resp.raise_for_status()
+            except requests.RequestException as err:
+                logger.error("Failed to fetch results for test %s (account %s): %s", test_id, aid, err)
+                # If one test's result fails, we abort the entire request
+                raise HTTPException(status_code=502, detail=f"Error retrieving results for test {test_id} in account {aid} from ThousandEyes API.")
+            result_json = resp.json()
+
+            # Remove links from both test metadata and result data
+            clean_test_meta = remove_links(test)
+            clean_result_data = remove_links(result_json)
+            # Combine test metadata and latest result into one structure
+            test_entry = {
+                **clean_test_meta,
+                "results": clean_result_data.get("results", clean_result_data)  # include only the relevant results section if present
+            }
+            account_entry["tests"].append(test_entry)
+        # Add this account's data to the final result
+        result_data["accounts"].append(account_entry)
+
+    # Log completion
+    logger.info("Successfully fetched test results for app_id '%s'. Returning response.", app_id)
+    return result_data
