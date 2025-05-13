@@ -1,0 +1,121 @@
+import os
+import logging
+from fastapi import FastAPI, HTTPException, Body
+from dotenv import load_dotenv
+import pymssql
+import requests
+
+load_dotenv()
+
+# Logging config
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
+
+# Load env vars
+DB_SERVER = os.getenv("DB_SERVER")
+DB_PORT = int(os.getenv("DB_PORT", "1433"))
+DB_USER = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+DB_NAME = os.getenv("DB_NAME")
+TE_API_TOKEN = os.getenv("TE_API_TOKEN")
+TE_API_BASE_URL = os.getenv("TE_API_BASE_URL").rstrip("/")
+HTTP_PROXY = os.getenv("HTTP_PROXY")
+HTTPS_PROXY = os.getenv("HTTPS_PROXY")
+
+proxies = {}
+if HTTP_PROXY:
+    proxies["http"] = HTTP_PROXY
+if HTTPS_PROXY:
+    proxies["https"] = HTTPS_PROXY
+
+# Supported test types and their v7 endpoint mapping
+SUPPORTED_TYPES = {
+    "agent-to-server": "network",
+    "http-server": "http-server",
+    "page-load": "page-load",
+    "web-transactions": "transactions"
+}
+
+app = FastAPI()
+
+def remove_links(data):
+    if isinstance(data, dict):
+        return {k: remove_links(v) for k, v in data.items() if k not in ("_links", "links")}
+    elif isinstance(data, list):
+        return [remove_links(item) for item in data]
+    else:
+        return data
+
+@app.post("/get-test-results")
+def get_test_results(payload: dict = Body(..., example={"app_id": "NETOPS"})):
+    app_id = payload.get("app_id")
+    if not app_id:
+        raise HTTPException(status_code=422, detail="Missing app_id in request.")
+
+    # Fetch AIDs from DB
+    try:
+        with pymssql.connect(server=DB_SERVER, port=DB_PORT, user=DB_USER,
+                             password=DB_PASSWORD, database=DB_NAME) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT DISTINCT Aid FROM dbo.t_ThousandEyes_Tests WITH (NOLOCK) WHERE AppIds = %s", (app_id,))
+                rows = cursor.fetchall()
+    except Exception as e:
+        logger.error("SQL error: %s", e)
+        raise HTTPException(status_code=500, detail="Database query failed.")
+
+    aids = [row[0] for row in rows]
+    if not aids:
+        raise HTTPException(status_code=404, detail=f"No AIDs found for app_id '{app_id}'")
+
+    headers = {
+        "Authorization": f"Bearer {TE_API_TOKEN}",
+        "Accept": "application/json"
+    }
+
+    output = {
+        "app_id": app_id,
+        "aid_count": len(aids),
+        "results": []
+    }
+
+    for aid in aids:
+        try:
+            resp = requests.get(f"{TE_API_BASE_URL}/tests", headers=headers, params={"aid": aid},
+                                timeout=15, proxies=proxies)
+            resp.raise_for_status()
+            test_list = resp.json().get("tests", [])
+        except Exception as e:
+            logger.error("Failed to fetch tests for aid %s: %s", aid, e)
+            continue
+
+        for test in test_list:
+            test_id = test.get("testId")
+            test_type = test.get("type", "").lower()
+
+            if test_type not in SUPPORTED_TYPES:
+                continue
+
+            endpoint = SUPPORTED_TYPES[test_type]
+            result_url = f"{TE_API_BASE_URL}/test-results/{test_id}/{endpoint}"
+            params = {"window": "5m"}
+
+            try:
+                r = requests.get(result_url, headers=headers, params=params, timeout=15, proxies=proxies)
+                r.raise_for_status()
+                result_json = r.json()
+            except Exception as e:
+                logger.error("Error fetching result for test %s: %s", test_id, e)
+                continue
+
+            clean_meta = remove_links(test)
+            clean_result = remove_links(result_json)
+
+            output["results"].append({
+                "aid": aid,
+                "testId": test_id,
+                "testType": test_type,
+                "testName": test.get("testName"),
+                "result": clean_result.get("results", clean_result)
+            })
+
+    return output
