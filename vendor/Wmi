@@ -1,0 +1,127 @@
+import os
+import logging
+import pymssql
+import requests
+from fastapi import FastAPI, HTTPException, Body
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+logger = logging.getLogger(__name__)
+
+# Configs
+DB_SERVER = os.getenv("DB_SERVER")
+DB_PORT = int(os.getenv("DB_PORT", "1433"))
+DB_USER = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+DB_NAME = os.getenv("DB_NAME")
+TE_API_TOKEN = os.getenv("TE_API_TOKEN")
+TE_API_BASE_URL = os.getenv("TE_API_BASE_URL", "https://api.thousandeyes.com/v6").rstrip("/")
+HTTP_PROXY = os.getenv("HTTP_PROXY")
+HTTPS_PROXY = os.getenv("HTTPS_PROXY")
+
+proxies = {}
+if HTTP_PROXY: proxies["http"] = HTTP_PROXY
+if HTTPS_PROXY: proxies["https"] = HTTPS_PROXY
+
+# Supported test types and their endpoint path
+SUPPORTED_TYPES = {
+    "agent-to-server": "net",
+    "http-server": "web/http-server",
+    "page-load": "web/page-load",
+    "web-transactions": "web/transactions"
+}
+
+app = FastAPI()
+
+def remove_links_and_meta(data):
+    """Strip _links, links, createdBy, modifiedBy, etc."""
+    if isinstance(data, dict):
+        return {
+            k: remove_links_and_meta(v)
+            for k, v in data.items()
+            if k not in ("_links", "links", "createdBy", "modifiedBy", "createdDate", "modifiedDate")
+        }
+    elif isinstance(data, list):
+        return [remove_links_and_meta(item) for item in data]
+    return data
+
+@app.post("/get-test-results")
+def get_test_results(payload: dict = Body(..., example={"app_id": "NETOPS"})):
+    app_id = payload.get("app_id")
+    if not app_id:
+        raise HTTPException(status_code=400, detail="Missing app_id")
+
+    # Query AID, TestType, TestId from MSSQL
+    try:
+        with pymssql.connect(server=DB_SERVER, port=DB_PORT, user=DB_USER,
+                             password=DB_PASSWORD, database=DB_NAME) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT DISTINCT Aid, testtype, TestId
+                    FROM dbo.t_ThousandEyes_Tests WITH (NOLOCK)
+                    WHERE AppIds = %s
+                """, (app_id,))
+                rows = cursor.fetchall()
+    except Exception as e:
+        logger.error("SQL error: %s", e)
+        raise HTTPException(status_code=500, detail="Database query failed.")
+
+    if not rows:
+        raise HTTPException(status_code=404, detail=f"No tests found for app_id '{app_id}'")
+
+    logger.info("Found %d tests for app_id %s", len(rows), app_id)
+
+    headers = {
+        "Authorization": f"Bearer {TE_API_TOKEN}",
+        "Accept": "application/json"
+    }
+
+    results = []
+
+    for aid, test_type, test_id in rows:
+        test_type = test_type.lower()
+        if test_type not in SUPPORTED_TYPES:
+            logger.debug("Skipping unsupported test type: %s", test_type)
+            continue
+
+        endpoint = SUPPORTED_TYPES[test_type]
+        url = f"{TE_API_BASE_URL}/{endpoint}/{test_id}"
+        params = {"aid": aid, "format": "json"}
+
+        try:
+            r = requests.get(url, headers=headers, params=params, timeout=15, proxies=proxies)
+            r.raise_for_status()
+            json_data = r.json()
+            cleaned = remove_links_and_meta(json_data)
+            results.append({
+                "aid": aid,
+                "test_id": test_id,
+                "test_type": test_type,
+                "result": cleaned
+            })
+        except requests.RequestException as err:
+            logger.error("Error fetching result for test %s: %s", test_id, err)
+            continue
+
+    return {
+        "app_id": app_id,
+        "total_tests": len(results),
+        "results": results
+    }
+
+
+DB_SERVER=DWPG0103VB.ent.wfb.bank.corp\PV0103B
+DB_PORT=11001
+DB_USER=TRIAGE_SSRS_SQL
+DB_PASSWORD=hEbeDudraXU7Tow2
+DB_NAME=Toolbox
+
+TE_API_TOKEN=your_valid_token_here
+TE_API_BASE_URL=https://api.thousandeyes.com/v6
+
+HTTP_PROXY=http://proxy.wellsfargo.com:8080
+HTTPS_PROXY=http://proxy.wellsfargo.com:8080
