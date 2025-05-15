@@ -1,0 +1,27 @@
+import subprocess
+import re
+import time
+
+def get_fqdn_from_nslookup(host, retries=2, delay=1):
+    """
+    Resolves FQDN using nslookup with regex parsing.
+    Retries on failure up to `retries` times.
+    """
+    host = host.strip().lower()
+    
+    for attempt in range(retries + 1):
+        try:
+            output = subprocess.check_output(['nslookup', host], text=True, stderr=subprocess.DEVNULL)
+            match = re.search(r'Name:\s+([^\s]+)', output, re.IGNORECASE)
+            if match:
+                return match.group(1).strip().lower().rstrip(".")
+            else:
+                # If no match and not last attempt, wait and retry
+                if attempt < retries:
+                    time.sleep(delay)
+        except Exception:
+            if attempt < retries:
+                time.sleep(delay)
+            continue
+
+    return "unresolved"
