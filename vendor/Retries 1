@@ -1,0 +1,33 @@
+import subprocess
+import re
+import time
+
+def get_fqdn_from_nslookup(host, retries=2, delay=1, default_domain="wellsfargo.com"):
+    """
+    Resolves FQDN using nslookup with retry and domain suffix fallback.
+    Handles inconsistencies in whitespace and newline endings.
+    """
+    host = host.strip().lower()
+
+    for attempt in range(retries + 1):
+        try:
+            output = subprocess.check_output(['nslookup', host], text=True, stderr=subprocess.DEVNULL)
+
+            # Normalize line endings and parse with regex
+            output = output.replace('\r', '')  # remove carriage returns
+            match = re.search(r'Name:\s+([^\s]+)', output, re.IGNORECASE)
+            if match:
+                fqdn = match.group(1).strip().lower().rstrip(".")
+                # Fix: if it returns the same as input (e.g. short), append domain
+                if fqdn == host and '.' not in fqdn:
+                    fqdn = f"{fqdn}.{default_domain}"
+                return fqdn
+
+            if attempt < retries:
+                time.sleep(delay)
+        except Exception:
+            if attempt < retries:
+                time.sleep(delay)
+            continue
+
+    return "unresolved"
