@@ -1,0 +1,47 @@
+param (
+    [Parameter(Mandatory = $true)]
+    [string]$InputFile,
+
+    [string]$OutputFile = "fqdn_output.csv",
+
+    [int]$MaxJobs = 50
+)
+
+$servers = Get-Content -Path $InputFile | Where-Object { $_.Trim() -ne "" }
+$jobs = @()
+
+foreach ($server in $servers) {
+    while (@(Get-Job -State Running).Count -ge $MaxJobs) {
+        Start-Sleep -Seconds 1
+    }
+
+    Start-Job -ScriptBlock {
+        param($serverName)
+
+        $fqdn = try {
+            $output = nslookup $serverName 2>&1
+            $nameLine = $output | Where-Object { $_ -match '^Name:\s+(.*)' }
+            if ($nameLine) {
+                ($nameLine -replace '^Name:\s+', '').Trim()
+            } else {
+                "Unresolved"
+            }
+        } catch {
+            "Unresolved"
+        }
+
+        [pscustomobject]@{
+            Hostname = $serverName
+            FQDN     = $fqdn
+        }
+    } -ArgumentList $server | ForEach-Object { $jobs += $_ }
+}
+
+Write-Host "Waiting for jobs to complete..."
+Wait-Job -Job $jobs
+
+$results = $jobs | ForEach-Object { Receive-Job -Job $_ }
+$jobs | Remove-Job
+
+$results | Export-Csv -Path $OutputFile -NoTypeInformation
+Write-Host "`n[✓] Clean FQDN resolution completed using nslookup. CSV saved to $OutputFile"
