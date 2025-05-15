@@ -1,0 +1,49 @@
+param (
+    [Parameter(Mandatory = $true)]
+    [string]$InputFile,
+
+    [string]$OutputFile = "fqdn_output.csv",
+
+    [int]$MaxJobs = 50
+)
+
+# Read the list of hostnames or IPs
+$servers = Get-Content -Path $InputFile | Where-Object { $_.Trim() -ne "" }
+
+# Track jobs
+$jobList = @()
+
+foreach ($server in $servers) {
+    # Wait if jobs hit the max limit
+    while (@(Get-Job | Where-Object { $_.State -eq 'Running' }).Count -ge $MaxJobs) {
+        Start-Sleep -Seconds 1
+    }
+
+    # Start DNS resolution job
+    Start-Job -ScriptBlock {
+        param($serverName)
+        try {
+            $fqdn = (Resolve-DnsName -Name $serverName -ErrorAction Stop)[0].NameHost
+        } catch {
+            $fqdn = "Unresolved"
+        }
+        [PSCustomObject]@{
+            Hostname = $serverName
+            FQDN     = $fqdn
+        }
+    } -ArgumentList $server | ForEach-Object { $jobList += $_ }
+}
+
+# Wait for all jobs to finish
+Write-Host "Waiting for all jobs to complete..."
+Wait-Job -Job $jobList
+
+# Collect results
+$results = $jobList | Receive-Job
+
+# Cleanup
+$jobList | Remove-Job
+
+# Export to CSV
+$results | Export-Csv -Path $OutputFile -NoTypeInformation
+Write-Host "`n[✓] FQDN resolution complete. CSV saved to $OutputFile"
