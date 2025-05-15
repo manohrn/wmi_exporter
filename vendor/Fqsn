@@ -1,0 +1,35 @@
+param (
+    [Parameter(Mandatory = $true)]
+    [string]$InputFile,
+
+    [string]$OutputFile = "fqdn_output.csv"
+)
+
+function Get-FQDN {
+    param ([string]$name)
+
+    try {
+        $result = Resolve-DnsName -Name $name -ErrorAction Stop
+        return $result[0].NameHost
+    }
+    catch {
+        return "Unresolved"
+    }
+}
+
+# Read input
+$hostnames = Get-Content -Path $InputFile | Where-Object { $_.Trim() -ne "" }
+
+# Prepare results
+$results = foreach ($host in $hostnames) {
+    $trimmedHost = $host.Trim()
+    [PSCustomObject]@{
+        Hostname = $trimmedHost
+        FQDN     = Get-FQDN -name $trimmedHost
+    }
+}
+
+# Export to CSV
+$results | Export-Csv -Path $OutputFile -NoTypeInformation
+
+Write-Host "FQDN resolution completed. CSV saved to $OutputFile"
