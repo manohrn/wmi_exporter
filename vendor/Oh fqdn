@@ -1,0 +1,18 @@
+import subprocess
+
+def get_fqdn_from_nslookup(host):
+    """
+    Returns FQDN by parsing nslookup output.
+    Falls back to 'unresolved' if FQDN cannot be determined.
+    """
+    host = host.strip().lower()  # normalize input
+    try:
+        output = subprocess.check_output(['nslookup', host], text=True, stderr=subprocess.DEVNULL)
+        for line in output.splitlines():
+            line = line.strip()
+            if line.lower().startswith("name:"):
+                fqdn = line.split(":", 1)[1].strip().lower()
+                return fqdn.rstrip(".")
+        return "unresolved"
+    except Exception:
+        return "unresolved"
