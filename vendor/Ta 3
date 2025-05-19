@@ -1,0 +1,27 @@
+Component
+Validity
+Explanation
+Scrape Manager
+✅ Yes
+Loads and manages scrape_configs; initiates Kubernetes SD
+Target Store
+✅ Yes
+Holds all discovered and relabeled scrape targets
+Allocator Engine
+✅ Yes
+Applies consistent-hashing or other strategies to assign targets
+Collector Registry
+✅ Yes
+Tracks collector agents via /targets API requests
+Assignment Map
+✅ Yes
+Maintains current mapping: target → collector
+Relabel Processor
+✅ Yes
+Applies Prometheus-style relabel_configs
+Target Refresh Loop
+✅ Yes
+Periodic loop to refresh targets and trigger reassignment
+HTTP API Server
+✅ Yes
+Serves endpoints: /targets, /jobs, /metrics
