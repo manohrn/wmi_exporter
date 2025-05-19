@@ -1,0 +1,136 @@
+Absolutely — let’s walk through the complete detailed flow of how consistent hashing works in the Target Allocator when used with Splunk OpenTelemetry Collector replicas, with the example of 100 targets and 3 collectors.
+
+High-Level Goal
+
+We want to assign 100 targets (pods, services, etc.) to 3 collector agents using consistent hashing in such a way that:
+Load is fairly balanced
+Only a few targets are reassigned when collectors are added or removed
+Full Detailed Flow
+
+STEP 1: Discovery — Targets and Collectors
+a. Targets
+
+These are discovered from Kubernetes using kubernetes_sd_config
+For example:
+target-1, target-2, ..., target-100
+b. Collectors
+
+These are Splunk OTel Collector agents registered with the Target Allocator.
+For example:
+otel-collector-0, otel-collector-1, otel-collector-2
+STEP 2: Hashing — Map to Virtual Ring
+a. Create a Hash Ring (0 to 359 degrees)
+
+We use SHA-256 or similar to hash both collectors and targets.
+
+Example:
+Entity	SHA-256 Hash	Position on Ring (%360)
+otel-collector-0	99d28a...	50
+otel-collector-1	b3c7f1...	150
+otel-collector-2	f1d88c...	300
+target-1	12a6ff...	100
+target-2	88291d...	280
+target-3	7d39fa...	355
+STEP 3: Assignment Rule — Clockwise Matching
+Each target is assigned to the first collector clockwise on the ring after its position.
+Let’s apply that:
+
+target-1 at 100 → next collector is otel-collector-1 at 150 → assigned to collector-1
+target-2 at 280 → next collector is otel-collector-2 at 300 → assigned to collector-2
+target-3 at 355 → past 300, so wrap around → next collector is at 50 → assigned to collector-0
+STEP 4: Target Allocator Stores Assignments
+Now the Target Allocator knows:
+
+collector-0:
+  - target-3
+  - target-10
+  - target-97
+  ...
+collector-1:
+  - target-1
+  - target-6
+  ...
+collector-2:
+  - target-2
+  - target-8
+  ...
+STEP 5: Collectors Poll the Allocator
+Each collector is configured to poll:
+
+extensions:
+  target_allocator:
+    endpoint: http://<allocator-service>:80
+    collector_id: ${POD_NAME}
+Each collector says:
+
+"I am otel-collector-1. Which targets should I scrape?"
+Allocator responds with:
+
+“Here’s your list: target-1, target-6, target-42...”
+STEP 6: Agents Start Scraping
+Each agent receives only its assigned targets and starts scraping metrics at the configured interval (e.g., every 30s).
+
+STEP 7: Collector Down Event
+Let’s say otel-collector-2 crashes.
+
+What happens:
+
+Targets previously assigned to collector-2 (say, 24 of them) are reassigned to the remaining collectors
+Example:
+12 go to collector-0
+12 go to collector-1
+Only 24% of targets move. Other 76% stay put.
+STEP 8: Collector Added Event
+Now you add a new replica: otel-collector-3
+
+It gets placed at position (e.g., 220°). Some targets between 150° and 300° now fall closer to 220°, so they shift to the new collector.
+
+Only ~8–10 targets move from old collectors to the new one — smooth and efficient rebalancing.
+Benefits of This Flow
+
+High scalability — more collectors can be added or removed without reassigning everything
+Load-balanced — thanks to evenly spaced positions on the ring
+Minimal disruption — only targets near the affected collector change
+Visual Summary (Simplified)
+
+HASH RING (0–359°)
+[50] collector-0
+[150] collector-1
+[300] collector-2
+
+Target-3 (355°) → wraps to → collector-0
+Target-20 (120°) → → collector-1
+Target-66 (290°) → → collector-2
+Would you like me to generate an actual diagram of the ring with these placements? Or simulate what happens step-by-step as collectors fail/join?
+
+You said:
+Yes
+ChatGPT said:
+Consistent Hashing - 3 Collectors
+Consistent Hashing - After Adding Collector-3 (220°)
+Here are two visual diagrams showing how consistent hashing works with your setup:
+
+Diagram 1: With 3 Collectors
+
+Blue circles are collectors placed on the ring:
+otel-collector-0 at 50°
+otel-collector-1 at 150°
+otel-collector-2 at 300°
+Red crosses are targets:
+Each target is assigned to the next collector clockwise.
+Target Assignments:
+target-1 (100°) → collector-1
+target-2 (280°) → collector-2
+target-3 (355°) → wraps → collector-0
+target-4 (60°) → collector-1
+target-5 (160°) → collector-2
+target-6 (310°) → wraps → collector-0
+Diagram 2: After Adding otel-collector-3 at 220°
+
+Now you have 4 collectors:
+
+otel-collector-3 added at 220°
+What Changed:
+Some targets (e.g. target-5) that were originally assigned to collector-2 now fall before 220°, and are reassigned to collector-3
+Only the targets between 150° and 300° (i.e. between collector-1 and collector-2) are possibly affected
+This demonstrates that consistent hashing only reassigns a small set of targets when a new collector is added — instead of reshuffling everything
