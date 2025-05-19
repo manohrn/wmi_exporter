@@ -1,0 +1,41 @@
+1. What happened?
+
+After the BCP (Business Continuity Plan) drill execution on Saturday (5/17), a firewall/network configuration issue caused agent traffic from on-prem to be blocked from reaching Grafana Cloud. As a result, agents began accumulating metrics locally without being able to transmit them.
+
+⸻
+
+2. How did we fix it?
+
+Once the root cause was identified (firewall/network restrictions post-BCP), the firewall rules were rolled back. Additionally, we worked with Grafana Labs to scale the ingest pipeline and increase the accepted agent count to handle the large backlog of pending metrics. This helped drain the local queue on agents and restore normal metrics flow.
+
+⸻
+
+3. When did we notice the issue first?
+
+The issue was first observed shortly after the BCP activity, when the agent count dropped from ~116K to ~2.9K in Grafana Cloud. This sudden drop triggered monitoring alerts and visibility gaps in dashboards.
+
+⸻
+
+4. Why did it take an hour+ to detect and respond?
+
+The delay was primarily due to:
+	•	Assumption that the drop was transient due to BCP changes.
+	•	Initial focus on verifying agent health rather than cloud ingestion.
+	•	Lack of immediate correlation between firewall rules and agent connectivity.
+	•	Absence of alerting specific to ingestion pipeline failures or agent drops post-BCP.
+
+⸻
+
+5. What are our lessons learned?
+	•	Network and firewall policies must be validated post-BCP drills before systems go live.
+	•	We need alerts that track drastic changes in agent connectivity or ingestion volumes.
+	•	Backpressure at the agent level must be monitored proactively.
+	•	Close collaboration with Grafana Labs enabled rapid scale-up of ingest capacity—a key recovery step.
+
+⸻
+
+6. What processes need improvement?
+	•	BCP Readiness Validation: Implement a checklist that includes agent-to-cloud traffic verification before restoring services post-BCP.
+	•	Proactive Monitoring: Enhance observability on agent connectivity and ingestion health metrics.
+	•	Failover Simulation: Regularly simulate similar network conditions in staging to validate monitoring and alerting workflows.
+	•	Grafana Agent Ingestor Scaling: Automate ingest pipeline scaling with Grafana during high backlog scenarios.
