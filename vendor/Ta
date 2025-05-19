@@ -1,0 +1,189 @@
+How kubernetes_sd_config Works with Target Allocator and Splunk OTel Collector
+
+Summary in One Line:
+The Target Allocator uses kubernetes_sd_config to discover scrape targets from the K8s API, and then assigns them dynamically to the registered Splunk OTel Collector agents.
+Detailed Flow:
+
+1. kubernetes_sd_config is Defined in Target Allocator's Scrape Config
+This config is typically stored in a ConfigMap, injected into the Target Allocator.
+
+Example:
+
+receivers:
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: 'kube-pods'
+          kubernetes_sd_configs:
+            - role: pod
+          relabel_configs:
+            - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+              action: keep
+              regex: true
+This tells the allocator:
+
+“Find pods in the cluster that match these labels or annotations.”
+2. Target Allocator Acts Like a Central Brain
+Watches Kubernetes via kubernetes_sd_config
+Builds a list of valid scrape targets
+Uses an allocation strategy (e.g., consistent-hashing) to divide targets across available collectors
+3. Splunk OTel Collectors Poll the Target Allocator
+Each OTel agent is deployed with:
+
+extensions:
+  target_allocator:
+    endpoint: http://<allocator-service>:80
+The agent says:
+
+“Hey allocator, which targets should I scrape?”
+And the allocator replies:
+
+“You scrape pods A, B, and C. Another agent will handle D, E, and F.”
+4. Agent Scrapes Assigned Targets
+Now the collector dynamically scrapes only what it's responsible for, reducing duplication and improving load distribution.
+
+Visual Flow
+
+   +---------------------------+
+   |      Kubernetes API       |
+   |   (Pods, Services, etc)   |
+   +-------------+-------------+
+                 |
+                 v
+   +---------------------------+
+   |     Target Allocator      |
+   |  - uses kubernetes_sd     |
+   |  - builds scrape targets  |
+   |  - allocates to agents    |
+   +------+----------+---------+
+          |          |
+          v          v
++----------------+  +----------------+
+| OTel Collector |  | OTel Collector |
+| (Agent A)      |  | (Agent B)      |
++----------------+  +----------------+
+        |                  |
+        v                  v
+Scrapes targets A, B     Scrapes targets C, D
+Why This Design Is Powerful:
+
+Auto-discovery: No need to hardcode IPs or hosts
+Dynamic allocation: Load balancing via Target Allocator
+Clean separation: Scrape logic is handled centrally, agents just scrape what they are told to
+Important Notes:
+
+You must enable the target_allocator extension in each collector
+Agents should not have kubernetes_sd_config locally — otherwise they'll scrape everything themselves
+This is the recommended way when using Splunk OTel Collector in cluster mode
+Would you like:
+
+Sample values.yaml for deploying this setup via Helm?
+A diagram for your Confluence?
+You said:
+Yes
+ChatGPT said:
+Here is everything you need:
+
+1. Sample values.yaml for Helm-based Splunk OpenTelemetry Collector with Target Allocator
+
+This assumes:
+
+You are deploying on OpenShift or Kubernetes
+Target Allocator is enabled
+Collectors are in cluster receiver mode
+clusterReceiver:
+  enabled: true
+  config:
+    extensions:
+      health_check: {}
+      target_allocator:
+        endpoint: http://$(TARGET_ALLOCATOR_SERVICE):80
+    receivers:
+      prometheus:
+        config:
+          scrape_configs: []  # Leave empty, targets come from allocator
+    service:
+      extensions: [health_check, target_allocator]
+      pipelines:
+        metrics:
+          receivers: [prometheus]
+          exporters: [splunk_hec]  # adjust your exporter
+          processors: [batch]
+
+targetAllocator:
+  enabled: true
+  allocation_strategy: consistent-hashing
+  prometheus_cr:
+    enabled: false  # We use kubernetes_sd_config instead
+  config:
+    scrape_configs:
+      - job_name: 'kube-pods'
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__meta_kubernetes_pod_ip]
+            target_label: __address__
+            replacement: $1:8080
+Replace $(TARGET_ALLOCATOR_SERVICE) with your actual service name, e.g. otel-allocator.default.svc.cluster.local.
+
+2. Visual Architecture Diagram
+
+Here’s a textual version you can visualize or convert to an image/PPT:
+
++----------------------------+
+|   Kubernetes Cluster API   |
+| (pods, annotations, etc.)  |
++----------------------------+
+            |
+            v
++----------------------------+
+|     Target Allocator       |
+|  - Uses kubernetes_sd      |
+|  - Discovers scrape targets|
+|  - Allocates using hashing |
++------------+---------------+
+             |
+     +-------+-------+
+     |               |
+     v               v
++-----------+   +-----------+
+| Collector |   | Collector |
+|   Agent A |   |   Agent B |
++-----------+   +-----------+
+     |               |
+     |               |
+     +--> Scrape Assigned Targets
+3. Confluence Page Structure
+
+Here's a ready-to-use layout for documenting this setup:
+
+Title: Splunk OTel Collector with Target Allocator - Dynamic Kubernetes Monitoring
+Overview
+
+Describe the need for dynamic scraping using kubernetes_sd_config + target allocator to balance load in multi-agent setups.
+
+Components
+
+Component	Purpose
+Target Allocator	Centralizes scrape configs and distributes targets
+Splunk OTel Agent	Polls allocator and scrapes only assigned targets
+Kubernetes API	Provides list of pods/services to be monitored using SD
+Flow
+
+targetAllocator discovers pods using kubernetes_sd_config
+It applies relabeling and builds scrape target list
+It assigns targets using consistent hashing
+Collector agents poll allocator to get their assigned targets
+Helm Configuration
+
+Paste the sample values.yaml (above)
+
+Diagram
+
+Insert the architecture diagram
