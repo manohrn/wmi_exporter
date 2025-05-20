@@ -1,0 +1,71 @@
+import csv
+import requests
+from requests.auth import HTTPBasicAuth
+import urllib3
+
+# -----------------------
+# CONFIGURATION
+# -----------------------
+CSV_FILE = "input_hosts.csv"  # Replace with your actual CSV filename
+GRAFANA_AGENT_API = "https://your-grafana-agent-api/api/agent/v1"
+GRAFANA_USERNAME = "your-grafana-username"
+GRAFANA_PASSWORD = "your-grafana-password"
+DEFAULT_CLUSTER_NAME = "default_cluster"
+
+# Disable SSL certificate warnings (for self-signed certs)
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+grafana_auth = HTTPBasicAuth(GRAFANA_USERNAME, GRAFANA_PASSWORD)
+
+# -----------------------
+# FUNCTION: PUSH LABELS
+# -----------------------
+def push_template_variable_to_agent(agent_id, data):
+    payload = {
+        "template_variables": {
+            "mongodb_monitors": [data]
+        }
+    }
+    url = f"{GRAFANA_AGENT_API}/instances/{agent_id}/labels"
+    try:
+        response = requests.put(url, auth=grafana_auth, json=payload, verify=False)
+        if response.status_code == 200:
+            print(f"[OK] Updated labels for: {agent_id}")
+        else:
+            print(f"[FAIL] {agent_id} - Status: {response.status_code} - {response.text}")
+    except Exception as e:
+        print(f"[ERROR] Exception while pushing to {agent_id}: {str(e)}")
+
+# -----------------------
+# FUNCTION: READ CSV AND PROCESS
+# -----------------------
+def process_csv_and_push():
+    try:
+        with open(CSV_FILE, mode='r', newline='') as file:
+            reader = csv.DictReader(file)
+            for row in reader:
+                project_id = row['project_id'].strip()
+                project_name = row['project_name'].strip()
+                hostname = row['hostname'].strip()
+
+                if not all([project_id, project_name, hostname]):
+                    print(f"[SKIP] Incomplete row: {row}")
+                    continue
+
+                payload = {
+                    "project_id": project_id,
+                    "project_name": project_name,
+                    "cluster_name": DEFAULT_CLUSTER_NAME,
+                    "hostname": hostname
+                }
+
+                push_template_variable_to_agent(agent_id=hostname, data=payload)
+    except FileNotFoundError:
+        print(f"[ERROR] File not found: {CSV_FILE}")
+    except Exception as e:
+        print(f"[ERROR] Unexpected error: {str(e)}")
+
+# -----------------------
+# MAIN
+# -----------------------
+if __name__ == "__main__":
+    process_csv_and_push()
