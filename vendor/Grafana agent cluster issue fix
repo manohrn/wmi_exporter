@@ -1,0 +1,51 @@
+Step-by-Step Fix for Cluster Join Timeout (Windows Servers)
+
+1. Choose a Cluster Port (e.g., 12345)
+Use a consistent port on both servers for cluster communication.
+
+2. Open TCP and UDP Port Inbound on Both Servers
+Run the following commands on both servers in PowerShell (as Administrator):
+
+# Allow inbound TCP on port 12345
+netsh advfirewall firewall add rule name="Agent Cluster TCP 12345" dir=in action=allow protocol=TCP localport=12345
+
+# Allow inbound UDP on port 12345
+netsh advfirewall firewall add rule name="Agent Cluster UDP 12345" dir=in action=allow protocol=UDP localport=12345
+3. Optional: Allow Outbound Rules for Good Measure
+# Allow outbound TCP/UDP (usually allowed by default, but to be safe)
+netsh advfirewall firewall add rule name="Agent Cluster TCP 12345 Outbound" dir=out action=allow protocol=TCP localport=12345
+netsh advfirewall firewall add rule name="Agent Cluster UDP 12345 Outbound" dir=out action=allow protocol=UDP localport=12345
+4. Validate Connectivity
+Run from one server to the other:
+
+Test-NetConnection -ComputerName <peer-server-fqdn> -Port 12345
+You should now see:
+
+TcpTestSucceeded : True
+5. Restart Grafana Agent on Both Servers
+Make sure each server has a cluster block in its .river file like:
+
+Example for Agent A:
+
+cluster "agent_cluster" {
+  node_name     = "agent-a"
+  bind_addr     = "0.0.0.0:12345"
+  join_members  = ["agent-b.example.com:12345"]
+}
+Example for Agent B:
+
+cluster "agent_cluster" {
+  node_name     = "agent-b"
+  bind_addr     = "0.0.0.0:12345"
+  join_members  = ["agent-a.example.com:12345"]
+}
+Use IP address instead of FQDN if DNS is unreliable.
+6. Check Grafana Agent Logs
+Look for:
+
+cluster joined with 1 nodes
+If still failing:
+
+Share logs using --log.level=debug
+Confirm netstat -ano | findstr :12345 shows LISTENING
+Confirm Test-NetConnection passes
