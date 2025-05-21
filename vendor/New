@@ -1,0 +1,8 @@
+Get-NetFirewallRule | Where-Object { $_.DisplayName -like "*12345*" } |
+  Get-NetFirewallPortFilter |
+  Select-Object Name, Protocol, LocalPort
+
+Get-NetFirewallRule -DisplayName "*12345*" | Select DisplayName, Enabled, Direction, Action
+
+
+netstat -ano | findstr :12345
