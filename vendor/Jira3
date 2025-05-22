@@ -1,0 +1,35 @@
+Description:
+Grafana Labs has introduced a new Gen AI assistant feature aimed at enhancing user interaction by enabling natural language queries, automated dashboard generation, and proactive insights. This story involves investigating the assistant’s integration into GRFCL, testing its functionality, and assessing its potential to improve operational efficiency and self-service analytics.
+
+Key activities include:
+	•	Enabling and configuring the Gen AI assistant feature in the Grafana instance used by GRFCL
+	•	Exploring capabilities such as:
+	•	Natural language querying of metrics
+	•	AI-generated dashboard suggestions
+	•	Intelligent troubleshooting prompts
+	•	Documenting findings, usability, limitations, and potential implementation strategies
+	•	Providing feedback to internal teams and/or Grafana Labs if applicable
+
+⸻
+
+Design:
+Placeholder: Include a UI interaction map or a sample query-to-dashboard conversion flow using the assistant.
+
+⸻
+
+Technical Implementation:
+	•	Ensure Grafana Cloud instance supports the Gen AI assistant (based on version/release notes)
+	•	Enable the feature in the organization settings (if not enabled by default)
+	•	Test the assistant with various GRFCL metrics and scenarios
+	•	Evaluate the assistant’s accuracy, relevance, and response time
+	•	Document potential use cases and benefits for GRFCL users
+	•	Summarize feedback for product evaluation or enhancement
+
+⸻
+
+Acceptance Criteria:
+	•	Gen AI assistant is successfully enabled in GRFCL’s Grafana instance
+	•	At least 5 distinct use cases are tested (e.g., querying, dashboard generation, issue diagnosis)
+	•	Assistant responses are relevant and usable for at least 80% of tested queries
+	•	Benefits and limitations are clearly documented
+	•	Recommendation report is created on whether to expand the feature’s usage across other apps
