@@ -1,0 +1,41 @@
+Description:
+The goal of this story is to implement Ping and Port monitoring using Prometheus and the Blackbox exporter, effectively replacing legacy SiteScope monitoring. This includes writing automation scripts to dynamically update the Blackbox exporter configuration files whenever new endpoints are added or existing ones are modified.
+
+The solution must support:
+	•	Migrating existing monitored endpoints from SiteScope
+	•	Using the Prometheus Blackbox exporter for ICMP (ping) and TCP port checks
+	•	Generating and updating monitoring configuration automatically using scripts (e.g., in Python or Shell)
+	•	Validating the configuration updates and metrics visibility in Grafana Cloud
+	•	Ensuring monitoring targets are grouped and labeled by environment and function (e.g., prod, nonprod, database, service)
+
+⸻
+
+Design:
+Placeholder: Add architectural diagram showing data flow from Blackbox Exporter → Prometheus → Grafana Cloud, and config update automation script interaction.
+
+⸻
+
+Technical Implementation:
+	•	Identify and export current Ping and Port targets from SiteScope
+	•	Set up and configure Prometheus Blackbox exporter to handle ICMP and TCP checks
+	•	Create automation scripts to:
+	•	Parse target definitions (from file, CMDB, or service registry)
+	•	Update Blackbox exporter’s configuration YAML files
+	•	Reload or trigger Prometheus config reloads if necessary
+	•	Validate metric scraping and alerting in Grafana Cloud
+	•	Ensure proper error handling and logging in the scripts
+
+⸻
+
+Acceptance Criteria:
+	•	All Ping and Port monitoring targets are successfully migrated from SiteScope to Prometheus using Blackbox exporter
+	•	Monitoring configuration is automatically generated and updated using the developed scripts
+	•	New targets can be added through config inputs and are reflected in Prometheus within 5 minutes
+	•	ICMP and TCP metrics are visible in Grafana Cloud for all defined targets
+	•	Monitoring targets are labeled by environment and function for filtering in Grafana
+	•	Monitoring is verified with failure simulation and alerts (if integrated)
+	•	Documentation is updated with script usage and configuration instructions
+
+⸻
+
+Let me know if you’d like subtasks broken out for script development, migration validation, or alert configuration.
