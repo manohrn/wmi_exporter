@@ -1,0 +1,34 @@
+Description:
+This story aims to onboard the SPLMT and GRFCL applications into the Orchestra framework, including all relevant OpenShift Container Platform (OCP) line-of-business (LOB) cluster infrastructure. The onboarding will be facilitated through Harness pipelines to enable streamlined and automated deployment of the metrics collection solution into Grafana Cloud.
+
+Key activities include:
+	•	Registering SPLMT and GRFCL as application IDs in Orchestra
+	•	Associating relevant OCP LOB clusters with each application
+	•	Updating or creating Harness deployment pipelines for metrics solution
+	•	Validating successful deployment and data visibility in Grafana Cloud
+	•	Ensuring consistent tagging and environment labeling for filtering and dashboarding
+
+⸻
+
+Design:
+Placeholder: Include a diagram showing app ID and infra mapping into Orchestra, Harness deployment flow, and metrics path to Grafana Cloud.
+
+⸻
+
+Technical Implementation:
+	•	Identify SPLMT and GRFCL environment targets and related OCP clusters
+	•	Configure these applications and infra components in Orchestra
+	•	Extend or build Harness pipelines to deploy metrics exporters and config
+	•	Register applications with environment-specific tags for visualization in Grafana
+	•	Verify that metrics solution is deployed and operational across all clusters
+	•	Document steps and configurations for reusability
+
+⸻
+
+Acceptance Criteria:
+	•	SPLMT and GRFCL app IDs are onboarded to Orchestra
+	•	All OCP LOB clusters tied to these apps are registered and mapped
+	•	Harness pipelines are updated or created to support deployment
+	•	Metrics are deployed successfully and visible in Grafana Cloud
+	•	Metrics are properly tagged and grouped for filtering
+	•	Onboarding documentation is completed and validated
