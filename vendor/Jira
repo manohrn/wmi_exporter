@@ -1,0 +1,36 @@
+User Story:
+As a DevOps engineer, I want to onboard Mongo DB dev metrics to Grafana Cloud using automation, so that I can monitor the database performance in a centralized and efficient way.
+
+⸻
+
+Description:
+This task involves automating the process of publishing Mongo DB metrics from the development environment to Grafana Cloud. The goal is to set up an efficient, repeatable monitoring setup using automation tools, ensuring metrics from the Mongo DB dev environment are available in Grafana for performance and health monitoring.
+
+Key tasks include:
+	•	Onboarding the Mongo DB dev instance into the agent management environment
+	•	Creating labels specific to the development environment
+	•	Developing a script to push metrics to the NONPROD KEES environment
+	•	Testing the development environment to ensure metrics are correctly published and visible in Grafana
+
+⸻
+
+Design:
+Placeholder: Attach the design diagram or specifications here, such as architecture flow or configuration mapping.
+
+⸻
+
+Technical Implementation:
+	•	Integrate Mongo DB dev into the existing agent management system
+	•	Define and apply unique labels for the dev environment to identify metrics distinctly
+	•	Implement a script (e.g., in Python or shell) for pushing metrics to NONPROD KEES
+	•	Validate integration by checking data visibility on Grafana Cloud dashboards
+	•	Ensure configurations are reusable and adaptable for future environments
+
+⸻
+
+Acceptance Criteria:
+	•	Mongo DB dev instance is successfully onboarded into the agent management environment
+	•	Environment-specific labels are created and verified
+	•	A working script is available that pushes metrics to the NONPROD KEES endpoint
+	•	Metrics are visible and updated in Grafana Cloud dashboards
+	•	The dev environment is tested and confirmed to reflect correct metric data
