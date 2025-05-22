@@ -1,0 +1,37 @@
+
+⸻
+
+Description:
+This story captures ongoing BAU (Break/Fix and support) responsibilities handled during Sprint 2025-S11. These tasks are critical for maintaining operational efficiency and stakeholder satisfaction.
+
+The scope of this story includes:
+	•	Assisting engineering team members with development or environment blockers
+	•	Reviewing and supporting production deployment activities
+	•	Addressing and prioritizing any reported vulnerabilities
+	•	Responding to and resolving customer queries related to metrics and Grafana Cloud
+	•	Supporting migration efforts from legacy ITRS monitoring to the Prometheus/Grafana stack
+
+⸻
+
+Design:
+Not applicable (operational BAU task). Optionally, attach a process flow for incident support or deployment review.
+
+⸻
+
+Technical Implementation:
+	•	Provide technical consultation to engineers on blockers and implementation challenges
+	•	Participate in production deployment planning and validation
+	•	Review and triage vulnerability reports, coordinate fixes with relevant teams
+	•	Engage with end-users/customers to resolve queries and provide updates
+	•	Guide ITRS-to-Prometheus metric mapping and orchestration as needed
+	•	Log hours and categorize work (support, fix, guidance) for BAU reporting
+
+⸻
+
+Acceptance Criteria:
+	•	At least 1 production deployment reviewed or supported successfully
+	•	Any critical or high vulnerabilities assigned and mitigated within SLA
+	•	Customer queries responded to within agreed response times
+	•	At least one active support session for ITRS migration conducted
+	•	Peer feedback confirms availability and guidance throughout the sprint
+	•	BAU efforts documented in team tracking tool or sprint notes
