@@ -1,0 +1,258 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": null,
+    "title": "Application Connectivity Monitoring \u2013 ICMP & TCP (Blackbox)",
+    "timezone": "browser",
+    "schemaVersion": 37,
+    "version": 1,
+    "refresh": "30s",
+    "panels": [
+      {
+        "type": "timeseries",
+        "title": "Target Uptime (Last 24h)",
+        "targets": [
+          {
+            "expr": "avg_over_time(probe_success{group=\"$group\", app_id=\"$app_id\"}[24h]) * 100",
+            "legendFormat": "{{instance}}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 24,
+          "x": 0,
+          "y": 0
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                },
+                {
+                  "color": "red",
+                  "value": 80
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "type": "table",
+        "title": "Latest Probe Success Status",
+        "targets": [
+          {
+            "expr": "probe_success{group=\"$group\", app_id=\"$app_id\"}",
+            "legendFormat": "{{instance}}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 24,
+          "x": 0,
+          "y": 8
+        }
+      },
+      {
+        "type": "timeseries",
+        "title": "ICMP/TCP Response Time Trends (Last 1h)",
+        "targets": [
+          {
+            "expr": "avg_over_time(probe_duration_seconds{group=\"$group\", app_id=\"$app_id\"}[1m])",
+            "legendFormat": "{{instance}}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 24,
+          "x": 0,
+          "y": 16
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s"
+          }
+        }
+      },
+      {
+        "type": "heatmap",
+        "title": "Heatmap - ICMP/TCP Probe Uptime",
+        "targets": [
+          {
+            "expr": "probe_success{group=\"$group\", app_id=\"$app_id\"}",
+            "legendFormat": "{{instance}}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {
+          "h": 10,
+          "w": 24,
+          "x": 0,
+          "y": 24
+        }
+      },
+      {
+        "type": "barchart",
+        "title": "Top 5 Slowest Targets (by Average Duration)",
+        "targets": [
+          {
+            "expr": "topk(5, avg_over_time(probe_duration_seconds{group=\"$group\", app_id=\"$app_id\"}[1h]))",
+            "legendFormat": "{{instance}}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 24,
+          "x": 0,
+          "y": 34
+        }
+      },
+      {
+        "type": "stat",
+        "title": "Failed Probe Count (Last 1h)",
+        "targets": [
+          {
+            "expr": "count_over_time(probe_success{group=\"$group\", app_id=\"$app_id\"} == 0 [1h])",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {
+          "h": 4,
+          "w": 12,
+          "x": 0,
+          "y": 42
+        }
+      },
+      {
+        "type": "table",
+        "title": "Alerting Targets - Probe Failure",
+        "targets": [
+          {
+            "expr": "probe_success{group=\"$group\", app_id=\"$app_id\"} == 0",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 24,
+          "x": 0,
+          "y": 46
+        }
+      },
+      {
+        "type": "timeseries",
+        "title": "Detailed Probe Metrics - $target",
+        "targets": [
+          {
+            "expr": "probe_success{instance=\"$target\"}",
+            "legendFormat": "Success",
+            "refId": "A"
+          },
+          {
+            "expr": "probe_duration_seconds{instance=\"$target\"}",
+            "legendFormat": "Duration",
+            "refId": "B"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 24,
+          "x": 0,
+          "y": 54
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s"
+          }
+        }
+      },
+      {
+        "type": "table",
+        "title": "Last Scrape Time per Target",
+        "targets": [
+          {
+            "expr": "time() - probe_duration_seconds{group=\"$group\", app_id=\"$app_id\"}",
+            "legendFormat": "{{instance}}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {
+          "h": 6,
+          "w": 24,
+          "x": 0,
+          "y": 62
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s"
+          }
+        }
+      },
+      {
+        "type": "barchart",
+        "title": "ICMP vs TCP Success Ratio (by Target)",
+        "targets": [
+          {
+            "expr": "avg_over_time(probe_success{type=\"icmp\", group=\"$group\", app_id=\"$app_id\"}[1h]) * 100",
+            "legendFormat": "ICMP {{instance}}",
+            "refId": "A"
+          },
+          {
+            "expr": "avg_over_time(probe_success{type=\"tcp\", group=\"$group\", app_id=\"$app_id\"}[1h]) * 100",
+            "legendFormat": "TCP {{instance}}",
+            "refId": "B"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 24,
+          "x": 0,
+          "y": 68
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent"
+          }
+        }
+      }
+    ],
+    "templating": {
+      "list": [
+        {
+          "name": "group",
+          "label": "Monitoring Group",
+          "type": "query",
+          "datasource": "Prometheus",
+          "query": "label_values(probe_success, group)",
+          "refresh": 1
+        },
+        {
+          "name": "app_id",
+          "label": "Application ID",
+          "type": "query",
+          "datasource": "Prometheus",
+          "query": "label_values(probe_success{group=\"$group\"}, app_id)",
+          "refresh": 1
+        },
+        {
+          "name": "target",
+          "label": "Host Target",
+          "type": "query",
+          "datasource": "Prometheus",
+          "query": "label_values(probe_success{group=\"$group\", app_id=\"$app_id\"}, instance)",
+          "refresh": 1
+        }
+      ]
+    }
+  },
+  "overwrite": true
+}
