@@ -1,0 +1,12 @@
+Get-NetFirewallRule | Where-Object { $_.DisplayName -like "*1248*" } | Remove-NetFirewallRule
+
+Remove-NetFirewallRule -DisplayName "Agent Cluster TCP 1248"
+
+New-NetFirewallRule -DisplayName "Agent Cluster TCP 1248" `
+  -Direction Inbound `
+  -LocalPort 1248 `
+  -Protocol TCP `
+  -Action Allow `
+  -Profile Any
+
+Get-NetFirewallRule -DisplayName "Agent Cluster TCP 1248"
