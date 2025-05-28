@@ -1,0 +1,61 @@
+import yaml
+import requests
+
+# === CONFIGURATION ===
+yaml_file_path = "targets_tcp.yml"  # <-- Update to your YAML file path
+prometheus_url = "https://your-prometheus-server/api/v1/query"  # <-- Update to your Prometheus API
+prometheus_query = 'up{job="blackbox_tcp_test"}'
+output_file = "matched_targets.txt"
+
+# === AUTH + PROXY ===
+username = "your_prom_user"
+password = "your_prom_password"
+
+proxies = {
+    "http": "http://proxy.yourcompany.com:8080",
+    "https": "http://proxy.yourcompany.com:8080"
+}
+
+# === STEP 1: LOAD TARGETS FROM YAML ===
+with open(yaml_file_path, "r") as f:
+    yaml_data = yaml.safe_load(f)
+
+yaml_targets = set()
+
+for entry in yaml_data.get("targets", []):
+    targets = entry.get("targets", [])
+    group = entry.get("labels", {}).get("group", "").strip()
+    for target in targets:
+        yaml_targets.add((target.strip(), group))
+
+# === STEP 2: QUERY PROMETHEUS ===
+response = requests.get(
+    prometheus_url,
+    params={"query": prometheus_query},
+    auth=(username, password),
+    proxies=proxies,
+    timeout=30
+)
+
+if response.status_code != 200:
+    raise RuntimeError(f"Prometheus API error: {response.status_code} - {response.text}")
+
+result_data = response.json().get("data", {}).get("result", [])
+
+prometheus_targets = set()
+for entry in result_data:
+    labels = entry.get("metric", {})
+    probe_target = labels.get("probe_target", "").strip()
+    group = labels.get("group", "").strip()
+    if probe_target and group:
+        prometheus_targets.add((probe_target, group))
+
+# === STEP 3: FIND MATCHED TARGETS ===
+matched = yaml_targets.intersection(prometheus_targets)
+
+# === STEP 4: WRITE TO FILE ===
+with open(output_file, "w") as f:
+    for target, group in sorted(matched):
+        f.write(f"{target} : {group}\n")
+
+print(f"[✔] Matched targets written to: {output_file}")
