@@ -1,0 +1,11 @@
+New-NetFirewallRule -DisplayName "Agent Cluster TCP 12345" `
+  -Direction Inbound `
+  -LocalPort 12345 `
+  -Protocol TCP `
+  -Action Allow
+
+New-NetFirewallRule -DisplayName "Agent Cluster TCP 12345 Outbound" `
+  -Direction Outbound `
+  -LocalPort 12345 `
+  -Protocol TCP `
+  -Action Allow
