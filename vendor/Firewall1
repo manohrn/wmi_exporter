@@ -1,0 +1,6 @@
+Start-Job {
+  $ip = [System.Net.IPAddress]::Any
+  $listener = [System.Net.Sockets.TcpListener]::new($ip, 1248)
+  $listener.Start()
+  Start-Sleep -Seconds 600
+}
