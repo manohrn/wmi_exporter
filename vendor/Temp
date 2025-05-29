@@ -1,0 +1,29 @@
+process_names: |
+  - name: "CrowdStrike"
+    cmdline:
+      - "falcond"
+
+  {{- $seen_envs := dict -}}
+  {{- range $i, $m := .kafka_monitors }}
+  {{- if not (index $seen_envs $m.env_name) }}
+  {{- $_ := set $seen_envs $m.env_name true }}
+  - name: "kafka-broker-{{ $m.env_name }}"
+    cmdline:
+      - "kafka.Kafka.*"
+  - name: "kafka-zookeeper-{{ $m.env_name }}"
+    cmdline:
+      - "quorum.QuorumPeerMain.*"
+  - name: "kafka-connect-{{ $m.env_name }}"
+    cmdline:
+      - "kafka.connect.*"
+  - name: "kafka-rest-{{ $m.env_name }}"
+    cmdline:
+      - "kafka.rest.*"
+  - name: "kafka-schemaregistry-{{ $m.env_name }}"
+    cmdline:
+      - "kafka.schemaregistry.*"
+  - name: "kafka-controlcenter-{{ $m.env_name }}"
+    cmdline:
+      - "controlcenter.ControlCenter.*"
+  {{- end }}
+  {{- end }}
