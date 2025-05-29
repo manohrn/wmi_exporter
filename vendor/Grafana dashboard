@@ -1,0 +1,203 @@
+{
+  "__inputs": [],
+  "__requires": [],
+  "dashboard": {
+    "id": null,
+    "uid": null,
+    "title": "Blackbox Exporter - ICMP & TCP Monitor Dashboard",
+    "tags": [
+      "blackbox",
+      "ping",
+      "tcp",
+      "monitoring"
+    ],
+    "timezone": "browser",
+    "schemaVersion": 36,
+    "version": 1,
+    "refresh": "30s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Current Monitor Status (Up/Down)",
+        "type": "stat",
+        "datasource": "grafanacloud-wellsfargononprod-prom",
+        "targets": [
+          {
+            "expr": "count by (probe_success) (probe_success{group=\"$group\", app_id=\"$app_id\", monitor_type=\"$type\"})",
+            "format": "time_series",
+            "interval": "",
+            "legendFormat": "{{probe_success}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                },
+                {
+                  "color": "red",
+                  "value": 0
+                }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "gridPos": {
+          "h": 6,
+          "w": 12,
+          "x": 0,
+          "y": 0
+        }
+      },
+      {
+        "id": 2,
+        "title": "Monitor Count by App ID",
+        "type": "barchart",
+        "datasource": "grafanacloud-wellsfargononprod-prom",
+        "targets": [
+          {
+            "expr": "count by (app_id) (probe_success{group=\"$group\", monitor_type=\"$type\"})",
+            "format": "time_series",
+            "interval": "",
+            "legendFormat": "{{app_id}}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 0
+        }
+      },
+      {
+        "id": 3,
+        "title": "24h Success % per Monitor",
+        "type": "heatmap",
+        "datasource": "grafanacloud-wellsfargononprod-prom",
+        "targets": [
+          {
+            "expr": "avg_over_time(probe_success{group=\"$group\", app_id=\"$app_id\", monitor_type=\"$type\"}[1h])",
+            "format": "heatmap",
+            "interval": "",
+            "legendFormat": "{{name}}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {
+          "h": 9,
+          "w": 24,
+          "x": 0,
+          "y": 6
+        }
+      },
+      {
+        "id": 4,
+        "title": "Latency (probe_duration_seconds)",
+        "type": "timeseries",
+        "datasource": "grafanacloud-wellsfargononprod-prom",
+        "targets": [
+          {
+            "expr": "avg_over_time(probe_duration_seconds{group=\"$group\", app_id=\"$app_id\", monitor_type=\"$type\"}[5m])",
+            "format": "time_series",
+            "interval": "",
+            "legendFormat": "{{name}}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {
+          "h": 9,
+          "w": 24,
+          "x": 0,
+          "y": 15
+        }
+      },
+      {
+        "id": 5,
+        "title": "Failing Monitors (<95% Success in 24h)",
+        "type": "table",
+        "datasource": "grafanacloud-wellsfargononprod-prom",
+        "targets": [
+          {
+            "expr": "avg_over_time(probe_success{group=\"$group\", app_id=\"$app_id\", monitor_type=\"$type\"}[24h]) < 0.95",
+            "format": "table",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {
+          "h": 10,
+          "w": 24,
+          "x": 0,
+          "y": 24
+        }
+      }
+    ],
+    "templating": {
+      "list": [
+        {
+          "name": "group",
+          "type": "query",
+          "datasource": "grafanacloud-wellsfargononprod-prom",
+          "refresh": 1,
+          "query": "label_values(probe_success, group)",
+          "includeAll": false,
+          "multi": false,
+          "sort": 1,
+          "current": {
+            "text": "All",
+            "value": "All"
+          }
+        },
+        {
+          "name": "app_id",
+          "type": "query",
+          "datasource": "grafanacloud-wellsfargononprod-prom",
+          "refresh": 1,
+          "query": "label_values(probe_success{group=\"$group\"}, app_id)",
+          "includeAll": false,
+          "multi": false,
+          "sort": 1,
+          "current": {
+            "text": "All",
+            "value": "All"
+          }
+        },
+        {
+          "name": "monitor",
+          "type": "query",
+          "datasource": "grafanacloud-wellsfargononprod-prom",
+          "refresh": 1,
+          "query": "label_values(probe_success{group=\"$group\", app_id=\"$app_id\"}, name)",
+          "includeAll": false,
+          "multi": false,
+          "sort": 1,
+          "current": {
+            "text": "All",
+            "value": "All"
+          }
+        },
+        {
+          "name": "type",
+          "type": "custom",
+          "query": "ping,tcp",
+          "includeAll": false,
+          "multi": false,
+          "sort": 1,
+          "current": {
+            "text": "ping",
+            "value": "ping"
+          }
+        }
+      ]
+    }
+  },
+  "overwrite": true
+}
