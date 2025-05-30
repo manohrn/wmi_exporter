@@ -1,0 +1,55 @@
+Intended Value & Expected Outcome
+	•	Goal: Onboard SPLMT and GRFCL applications into the Orchestra framework and complete the monitoring sunrise under official app IDs across all OpenShift Container Platform (OCP) Line-of-Business (LOB) clusters.
+	•	Value: Ensure compliance with Wells Fargo monitoring policies and regulations. Achieve consistent and automated deployment of metrics collection pipelines to Grafana Cloud and Splunk Observability using Harness pipelines.
+	•	Outcome:
+	•	Monitoring solution will be officially registered under SPLMT and GRFCL app IDs.
+	•	We can successfully validate metric ingestion, environment tagging, and dashboards.
+	•	Monitoring can be performed under authorized application mnemonic identifiers without impediments.
+
+⸻
+
+Phases
+	1.	Register SPLMT and GRFCL as Application IDs in Orchestra.
+	2.	Associate OCP LOB clusters with each application.
+	3.	Identify SPLMT and GRFCL environment targets and related cluster infrastructure.
+	4.	Configure Harness pipelines for:
+	•	Metrics collection deployment.
+	•	Environment tagging.
+	•	Labeling for Grafana and Splunk dashboards.
+	5.	Validate deployment and ensure successful ingestion and visualization.
+	6.	Document steps for reusability.
+
+⸻
+
+Testability & Feasibility
+	•	Testability:
+Metrics ingestion and dashboard validation across clusters via SPLMT and GRFCL identifiers.
+	•	Feasibility:
+High — reusable Harness pipeline templates and tagging conventions are available.
+
+⸻
+
+Dependencies
+	•	No external dependencies identified. Internal teams (Infra, Monitoring, Harness) are aligned.
+
+⸻
+
+Risks & Unknowns
+	•	Risk:
+	•	Environment-specific onboarding or Helm deployments may delay overall metrics validation.
+	•	Cluster-level configurations may differ and require adjustments.
+
+⸻
+
+Technology Partners
+	•	CTO Sunrise Consultant
+	•	Harness DevOps Engineers
+	•	Observability Platform SMEs
+
+Weekly syncs planned to validate progress, unblock issues, and ensure delivery.
+
+⸻
+
+Performance & Nonfunctional Requirements
+	•	Ensure solution is scalable across all environments and future applications.
+	•	Tagging and metrics ingestion pipelines must maintain high availability and minimal delay.
