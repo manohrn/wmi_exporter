@@ -1,0 +1,257 @@
+{
+  "__inputs": [],
+  "__requires": [],
+  "dashboard": {
+    "id": null,
+    "uid": null,
+    "title": "Customer Observability - Uptime & Performance",
+    "tags": [
+      "observability",
+      "customer",
+      "sla",
+      "uptime",
+      "blackbox"
+    ],
+    "timezone": "browser",
+    "schemaVersion": 36,
+    "version": 1,
+    "refresh": "1m",
+    "templating": {
+      "list": [
+        {
+          "name": "group",
+          "type": "query",
+          "datasource": "grafanacloud-wellsfargononprod-prom",
+          "refresh": 1,
+          "query": "label_values(probe_success, group)",
+          "includeAll": false,
+          "multi": false
+        },
+        {
+          "name": "app_id",
+          "type": "query",
+          "datasource": "grafanacloud-wellsfargononprod-prom",
+          "refresh": 1,
+          "query": "label_values(probe_success{group=\"$group\"}, app_id)",
+          "includeAll": false,
+          "multi": false
+        },
+        {
+          "name": "type",
+          "type": "custom",
+          "query": "ping,tcp",
+          "includeAll": false,
+          "multi": false
+        }
+      ]
+    },
+    "panels": [
+      {
+        "id": 0,
+        "title": "\ud83d\udcca Wells Fargo - Customer SLA Monitoring",
+        "type": "text",
+        "gridPos": {
+          "h": 2,
+          "w": 24,
+          "x": 0,
+          "y": 0
+        },
+        "options": {
+          "content": "<b>Welcome to the Observability Dashboard.</b><br>This dashboard presents live metrics for uptime, failures, and latency across monitored assets.<br><i>Use dropdowns above to filter by Group, App ID, and Monitor Type.</i>",
+          "mode": "html"
+        },
+        "transparent": true
+      },
+      {
+        "id": 1,
+        "title": "SLA Heatmap - 24h Uptime % by Monitor",
+        "type": "heatmap",
+        "datasource": "grafanacloud-wellsfargononprod-prom",
+        "targets": [
+          {
+            "expr": "avg_over_time(probe_success{group=~\"$group\", app_id=~\"$app_id\"}[1h])",
+            "format": "time_series",
+            "interval": "",
+            "legendFormat": "{{name}}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {
+          "h": 9,
+          "w": 24,
+          "x": 0,
+          "y": 0
+        },
+        "fieldConfig": {
+          "defaults": {},
+          "overrides": []
+        }
+      },
+      {
+        "id": 2,
+        "title": "SLA Violations - Monitors <95% (24h)",
+        "type": "table",
+        "datasource": "grafanacloud-wellsfargononprod-prom",
+        "targets": [
+          {
+            "expr": "avg_over_time(probe_success{group=~\"$group\", app_id=~\"$app_id\"}[24h])",
+            "format": "time_series",
+            "interval": "",
+            "legendFormat": "{{name}}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 24,
+          "x": 0,
+          "y": 9
+        },
+        "fieldConfig": {
+          "defaults": {},
+          "overrides": []
+        }
+      },
+      {
+        "id": 3,
+        "title": "Total Monitors per App",
+        "type": "barchart",
+        "datasource": "grafanacloud-wellsfargononprod-prom",
+        "targets": [
+          {
+            "expr": "count by (app_id) (probe_success{group=~\"$group\"})",
+            "format": "time_series",
+            "interval": "",
+            "legendFormat": "{{name}}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {
+          "h": 7,
+          "w": 24,
+          "x": 0,
+          "y": 17
+        },
+        "fieldConfig": {
+          "defaults": {},
+          "overrides": []
+        }
+      },
+      {
+        "id": 4,
+        "title": "Monitor Type Split",
+        "type": "piechart",
+        "datasource": "grafanacloud-wellsfargononprod-prom",
+        "targets": [
+          {
+            "expr": "count by (monitor_type) (probe_success{group=~\"$group\"})",
+            "format": "time_series",
+            "interval": "",
+            "legendFormat": "{{name}}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {
+          "h": 6,
+          "w": 24,
+          "x": 0,
+          "y": 24
+        },
+        "fieldConfig": {
+          "defaults": {},
+          "overrides": []
+        }
+      },
+      {
+        "id": 5,
+        "title": "Monitors with 0 Success in 24h",
+        "type": "table",
+        "datasource": "grafanacloud-wellsfargononprod-prom",
+        "targets": [
+          {
+            "expr": "increase(probe_success{group=~\"$group\", app_id=~\"$app_id\"}[24h])",
+            "format": "time_series",
+            "interval": "",
+            "legendFormat": "{{name}}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 24,
+          "x": 0,
+          "y": 30
+        },
+        "fieldConfig": {
+          "defaults": {},
+          "overrides": []
+        }
+      },
+      {
+        "id": 6,
+        "title": "Latency per Monitor - 5m Average",
+        "type": "timeseries",
+        "datasource": "grafanacloud-wellsfargononprod-prom",
+        "targets": [
+          {
+            "expr": "avg_over_time(probe_duration_seconds{group=~\"$group\", app_id=~\"$app_id\"}[5m])",
+            "format": "time_series",
+            "interval": "",
+            "legendFormat": "{{name}}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {
+          "h": 9,
+          "w": 24,
+          "x": 0,
+          "y": 38
+        },
+        "fieldConfig": {
+          "defaults": {},
+          "overrides": []
+        }
+      },
+      {
+        "id": 7,
+        "title": "Real-Time Probe Success",
+        "type": "table",
+        "datasource": "grafanacloud-wellsfargononprod-prom",
+        "targets": [
+          {
+            "expr": "probe_success{group=~\"$group\", app_id=~\"$app_id\"}",
+            "format": "time_series",
+            "interval": "",
+            "legendFormat": "{{name}}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {
+          "h": 6,
+          "w": 24,
+          "x": 0,
+          "y": 47
+        },
+        "fieldConfig": {
+          "defaults": {},
+          "overrides": []
+        }
+      }
+    ],
+    "annotations": {
+      "list": [
+        {
+          "builtIn": 1,
+          "datasource": "-- Grafana --",
+          "enable": true,
+          "hide": true,
+          "iconColor": "rgba(0, 211, 255, 1)",
+          "name": "Annotations & Alerts",
+          "type": "dashboard"
+        }
+      ]
+    },
+    "description": "Customer Observability Dashboard - Auto generated by Observability Platform Team. Includes SLA, availability, latency, and failure analytics. Customizable by business unit (group), application, and monitor type."
+  },
+  "overwrite": true
+}
