@@ -1,0 +1,65 @@
+Thanks for the context regarding Jira ticket [BFZH-3676] Migrate custom metrics servers into New data center - NONPROD, along with the note that custom process and service metrics are generated using AutoSys.
+
+Here’s a professional and structured version of this Jira story, updated per your internal template and project standards:
+
+⸻
+
+Jira Ticket: [BFZH-3676] Migrate Custom Metrics Servers into New Data Center – NONPROD
+
+Intended Value & Expected Outcome
+	•	Goal:
+Seamlessly migrate custom metrics collection infrastructure for NONPROD from the legacy data center to the new data center.
+	•	Value:
+Ensure uninterrupted metrics collection for process and service monitoring in NONPROD environments, especially those generated via AutoSys. This supports observability continuity and compliance for mission-critical services.
+	•	Outcome:
+	•	Metrics from custom process and service monitors (AutoSys-based) are ingested successfully into Grafana Cloud post-migration.
+	•	All integrations, dashboards, and alerts remain functional and consistent with pre-migration state.
+	•	Infrastructure is ready for production-like testing and validation in the new data center.
+
+⸻
+
+Phases
+	1.	Inventory custom metrics servers and validate metric generation (AutoSys-based).
+	2.	Prepare the new data center environment and replicate necessary configurations (jobs, exporters, firewalls, routes).
+	3.	Update scrape targets in Grafana Agent or Prometheus configurations to point to new servers.
+	4.	Perform controlled switchover with metric flow verification in Grafana Cloud.
+	5.	Validate dashboard visualizations and alerting rules.
+	6.	Roll back if discrepancies are observed, or promote as standard NONPROD setup.
+	7.	Document steps and lessons learned for PROD migration.
+
+⸻
+
+Testability & Feasibility
+	•	Testability:
+Compare metric continuity (names, values, labels) before and after migration using side-by-side dashboard verification.
+	•	Feasibility:
+Proven approach used for previous LOB migrations, with reusable configs and Grafana integrations.
+
+⸻
+
+Dependencies
+	•	Network connectivity between new data center and Grafana Cloud
+	•	Autosys job execution in the new environment
+	•	Config access to Grafana Agents or Prometheus nodes
+
+⸻
+
+Risks & Unknowns
+	•	Risk:
+AutoSys jobs may require reconfiguration or elevated privileges in new data center.
+	•	Unknown:
+Latency or connectivity issues during initial testing phase could impact metrics delivery.
+
+⸻
+
+Technology Partners
+	•	Infra & Network Teams (New DC Setup)
+	•	Autosys Job Owners
+	•	Observability SMEs
+	•	Grafana Engineering Team
+
+⸻
+
+Performance & Nonfunctional Requirements
+	•	Metrics delivery from new DC must match old setup in terms of frequency, latency, and completeness.
+	•	Alert reliability and dashboard performance must be equivalent to legacy DC metrics source
