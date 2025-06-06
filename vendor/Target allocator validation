@@ -1,0 +1,103 @@
+✅ Use Case
+
+You want to:
+Use Target Allocator to assign scrape targets to Otel Collector agents.
+Enrich those targets with pod annotation wf_id.
+Ensure no extra pods are scraped or mislabeled.
+✅ STEP 1: Annotate Your Target Pods
+
+metadata:
+  annotations:
+    wf_id: "team-xyz"
+✅ This must exist on all pods you want to monitor.
+
+✅ STEP 2: Target Allocator Config (config.yaml)
+
+scrape_configs:
+  - job_name: otel-k8s
+    kubernetes_sd_configs:
+      - role: pod
+
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: "true"
+
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        target_label: __address__
+        regex: (.+)
+        replacement: $1
+
+      - source_labels: [__meta_kubernetes_pod_ip, __address__]
+        action: replace
+        regex: (.+);(.+)
+        replacement: ${1}:${2}
+        target_label: __address__
+
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: "go_.*"
+        action: drop
+✅ This defines which pods are scrapeable and sends only targets (not metadata) to the collector.
+✅ STEP 3: Splunk Otel Collector Config (otel-collector-config.yaml)
+
+receivers:
+  prometheus:
+    config:
+      target_allocator:
+        endpoint: http://target-allocator-service.default.svc.cluster.local:80
+        interval: 30s
+        collector_id: ${POD_NAME}
+        http_sd_config: true
+
+      scrape_configs:
+        - job_name: otel-k8s
+          honor_labels: true
+
+          # Required only for metadata enrichment (not discovery)
+          kubernetes_sd_configs:
+            - role: pod
+
+          relabel_configs:
+            # Attach pod annotation wf_id
+            - source_labels: [__meta_kubernetes_pod_annotation_wf_id]
+              target_label: wf_id
+              action: replace
+
+            # Optional: drop targets without wf_id
+            - source_labels: [wf_id]
+              regex: ""
+              action: drop
+
+          metric_relabel_configs:
+            - source_labels: [__name__]
+              regex: "go_.*"
+              action: drop
+✅ STEP 4: Environment Setup in Deployment
+
+Ensure your Otel Collector agent Deployment has:
+
+env:
+  - name: POD_NAME
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.name
+✅ Required for collector_id.
+
+✅ STEP 5: Validate Targets
+
+Use this to see what targets are assigned:
+
+curl http://<target-allocator-service>:80/assignments
+Check metrics via:
+
+up{job="otel-k8s"}
+wf_id
+✅ Summary
+
+Component	Role
+Target Allocator	Assigns scrape targets
+Otel Collector	Scrapes assigned targets
+k8s_sd_config	Adds wf_id to assigned targets
+relabel_configs	Inject wf_id into metrics
