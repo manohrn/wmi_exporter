@@ -1,0 +1,93 @@
+import csv
+import httpx
+from httpx import BasicAuth
+import datetime
+
+# === CONFIGURATION ===
+GRAFANA_CLOUD_URL = "https://your-grafana-instance.grafana.net"
+USERNAME = "your_username"
+PASSWORD = "your_password"
+CSV_PATH = "mongodb_agent_hosts.csv"
+AUDIT_LOG_PATH = "onboarding_audit_log.csv"
+DRY_RUN = False  # Set True to preview without pushing
+# ======================
+
+HEADERS = {"Content-Type": "application/json"}
+auth = BasicAuth(USERNAME, PASSWORD)
+
+audit_logs = []
+
+def push_template_variables(agent_id, variables):
+    url = f"{GRAFANA_CLOUD_URL}/api/agent/v1/agents/{agent_id}/variables"
+    try:
+        response = httpx.put(
+            url,
+            json=variables,
+            auth=auth,
+            verify=False,  # Skip SSL validation
+            timeout=10.0
+        )
+        return response.status_code, response.text
+    except Exception as e:
+        return 500, str(e)
+
+def onboard_all_hosts(csv_file_path):
+    with open(csv_file_path, newline='') as csvfile:
+        reader = csv.DictReader(csvfile)
+        for row in reader:
+            project_name = row['project_name'].strip()
+            project_id = row['project_id'].strip()
+            raw_hostnames = row['hostname']
+
+            # Extract only first 2 short hostnames
+            fqdn_hosts = [h.strip() for h in raw_hostnames.split(',') if h.strip()]
+            short_hosts = [h.split('.')[0] for h in fqdn_hosts[:2]]
+
+            for short_name in short_hosts:
+                agent_id = short_name.replace('.', '-')
+                replica = f"{agent_id}-replica"
+                cluster = f"{project_name}-cluster"
+
+                variables = {
+                    "role": "mongodb",
+                    "replica": replica,
+                    "cluster": cluster,
+                    "mongo_host": short_name,
+                    "project": project_name,
+                    "project_id": project_id
+                }
+
+                if DRY_RUN:
+                    print(f"[DRY RUN] Would push to {agent_id}: {variables}")
+                    status_code, message = 0, "dry-run"
+                else:
+                    print(f"Pushing to agent {agent_id} ...")
+                    status_code, message = push_template_variables(agent_id, variables)
+
+                audit_logs.append({
+                    "timestamp": datetime.datetime.utcnow().isoformat(),
+                    "agent_id": agent_id,
+                    "project": project_name,
+                    "replica": replica,
+                    "cluster": cluster,
+                    "mongo_host": short_name,
+                    "status_code": status_code,
+                    "message": message,
+                    "result": "success" if status_code in [200, 202] else "failure"
+                })
+
+def save_audit_log(filepath):
+    if not audit_logs:
+        print("No data to save in audit log.")
+        return
+
+    keys = audit_logs[0].keys()
+    with open(filepath, 'w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=keys)
+        writer.writeheader()
+        writer.writerows(audit_logs)
+    print(f"\n✅ Audit log saved: {filepath}")
+
+if __name__ == "__main__":
+    onboard_all_hosts(CSV_PATH)
+    save_audit_log(AUDIT_LOG_PATH)
