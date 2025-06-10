@@ -1,0 +1,102 @@
+import csv
+import requests
+import datetime
+
+# === CONFIGURATION ===
+GRAFANA_AGENT_API = "https://your-grafana-instance.grafana.net/api/agent/v1"
+GRAFANA_USERNAME = "your_username"
+GRAFANA_PASSWORD = "your_password"
+CSV_PATH = "mongodb_agent_hosts.csv"
+AUDIT_LOG_PATH = "onboarding_audit_log.csv"
+DRY_RUN = False  # True to just print, False to push to API
+# ======================
+
+def push_template_variable_to_agent(agent_id, data):
+    payload = {
+        "labels": {
+            "os": "linux",
+            "linux_baseconfig": "id",
+            "environment": "dev",
+            "snippetype": "mongo_exporter"
+        },
+        "template_variables": {
+            "mongo_db_monitors": [data]
+        }
+    }
+
+    url = f"{GRAFANA_AGENT_API}/agents/{agent_id}"
+    if DRY_RUN:
+        print(f"[DRY RUN] Would PUT to {url} with payload: {payload}")
+        return 0, "dry-run"
+    try:
+        response = requests.put(
+            url,
+            auth=(GRAFANA_USERNAME, GRAFANA_PASSWORD),
+            json=payload,
+            verify=False,  # Ignore SSL errors
+            timeout=10.0
+        )
+        if response.status_code not in [200, 202]:
+            print(f"[ERROR] Status: {response.status_code} for agent {agent_id}")
+            print(f"Payload: {payload}")
+            print(f"Response: {response.text}")
+        return response.status_code, response.text
+    except Exception as e:
+        print(f"[EXCEPTION] {e}")
+        return 500, str(e)
+
+def onboard_all_hosts(csv_file_path):
+    audit_logs = []
+    with open(csv_file_path, newline='', encoding="utf-8") as csvfile:
+        reader = csv.reader(csvfile)
+        header = next(reader)
+        project_name_idx = header.index("project_name")
+        project_id_idx = header.index("project_id")
+        hostname_idx = header.index("hostname")
+        for row in reader:
+            project_name = row[project_name_idx].strip()
+            project_id = row[project_id_idx].strip()
+            # Hostnames are from hostname_idx to end of row
+            hostnames = [h.strip() for h in row[hostname_idx:] if h.strip()]
+            short_hosts = [h.split('.')[0] for h in hostnames[:2]]
+            for short_name in short_hosts:
+                agent_id = short_name.replace('.', '-')
+                replica = f"{agent_id}-replica"
+                cluster = f"{project_name}-cluster"
+                mongo_vars = {
+                    "role": "mongodb",
+                    "replica": replica,
+                    "cluster": cluster,
+                    "mongo_host": short_name,
+                    "project": project_name,
+                    "project_id": project_id
+                }
+                print(f"{'[DRY RUN]' if DRY_RUN else 'Pushing'} to agent {agent_id} ...")
+                status_code, message = push_template_variable_to_agent(agent_id, mongo_vars)
+                audit_logs.append({
+                    "timestamp": datetime.datetime.utcnow().isoformat(),
+                    "agent_id": agent_id,
+                    "project": project_name,
+                    "replica": replica,
+                    "cluster": cluster,
+                    "mongo_host": short_name,
+                    "status_code": status_code,
+                    "message": message,
+                    "result": "success" if status_code in [200, 202, 0] else "failure"
+                })
+    return audit_logs
+
+def save_audit_log(filepath, audit_logs):
+    if not audit_logs:
+        print("No data to save in audit log.")
+        return
+    keys = audit_logs[0].keys()
+    with open(filepath, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=keys)
+        writer.writeheader()
+        writer.writerows(audit_logs)
+    print(f"\n✅ Audit log saved: {filepath}")
+
+if __name__ == "__main__":
+    logs = onboard_all_hosts(CSV_PATH)
+    save_audit_log(AUDIT_LOG_PATH, logs)
