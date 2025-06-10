@@ -1,0 +1,88 @@
+# Run this as Administrator
+
+$serviceName = "grafana-agent"
+$exePath = "C:\Program Files\Grafana Agent\grafana-agent-windows-amd64.exe"
+$configFile = "config.river"
+$listenPort = "12345"
+$nodeName = "tcp_cluster"
+$advertiseAddr = "10.59.6.146:12345"
+$joinAddrs = "10.59.6.145:12345"
+
+# 1. Stop the existing service
+Write-Host "Stopping Grafana Agent service..."
+Stop-Service -Name $serviceName -Force
+
+# 2. Set AGENT_MODE=flow at Machine level
+Write-Host "Setting AGENT_MODE environment variable..."
+[System.Environment]::SetEnvironmentVariable("AGENT_MODE", "flow", "Machine")
+
+# 3. Construct the flow mode ImagePath
+$imagePath = "`"$exePath`" run $configFile --server.http.listen.addr=0.0.0.0:$listenPort --disable-reporting --cluster.enabled --cluster.node-name=`"$nodeName`" --cluster.advertise-addr=`"$advertiseAddr`" --cluster.join-addresses=`"$joinAddrs`""
+
+# 4. Update registry
+$regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\$serviceName"
+Write-Host "Updating registry ImagePath..."
+Set-ItemProperty -Path $regPath -Name ImagePath -Value $imagePath
+
+# 5. Start the service
+Write-Host "Starting Grafana Agent service in Flow Mode..."
+Start-Service -Name $serviceName
+
+Write-Host "✅ Grafana Agent has been switched to Flow Mode and restarted import csv
+import yaml
+
+input_file = "Ping_Monitors_master.csv"  # Replace with your actual filename
+
+group_freq_set = set()
+
+# STEP 1: Read CSV and extract unique (group, frequency) pairs
+with open(input_file, newline='') as csvfile:
+    reader = csv.DictReader(csvfile)
+    for row in reader:
+        group = row.get('group', '').strip()
+        freq = row.get('frequency', '').strip()
+        if group and freq.isdigit():
+            group_freq_set.add((group, int(freq)))
+
+# STEP 2: Build YAML rules under icmp-alerts group
+alert_group = {
+    "groups": [
+        {
+            "name": "icmp-alerts",  # Logical Prometheus group
+            "rules": []
+        }
+    ]
+}
+
+for group, freq in sorted(group_freq_set):
+    rule = {
+        "alert": f"HostDown_{group}",
+        "expr": f'probe_success{{job="icmp", node_group="{group}"}} == 0',
+        "for": f"{freq}s",
+        "labels": {
+            "severity": "critical",
+            "namespace": "blackbox",  # Optional: remove if not needed
+            "instance": "{{ $labels.instance }}",
+            "node": "{{ $labels.node }}",
+            "node_group": "{{ $labels.node_group }}",
+            "freq": "{{ $labels.freq }}"
+        },
+        "annotations": {
+            "summary": "ICMP Ping failed for {{ $labels.instance }}",
+            "description": f"Host {{ $labels.instance }} (group: {{ $labels.node_group }}) is unreachable via ICMP for {freq} seconds."
+        }
+    }
+
+    alert_group["groups"][0]["rules"].append(rule)
+
+# STEP 3: Write to final YAML file
+output_file = "blackbox-monitors.yml"
+with open(output_file, "w") as f:
+    yaml.dump(alert_group, f, sort_keys=False, default_flow_style=False)
+
+print(f"✅ Prometheus alert rules saved to {output_file}")
+
+
+
+
+
