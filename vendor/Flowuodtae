@@ -1,0 +1,23 @@
+# Run this as Administrator
+
+# Define the new ImagePath using flow mode (River config)
+$flowModePath = '"C:\Program Files\Grafana Agent\grafana-agent-windows-amd64.exe" run "C:\Program Files\Grafana Agent\config_basic.river" --server.http.listen.addr=0.0.0.0:12345 --disable-reporting'
+
+# Registry key path for the Grafana Agent service
+$serviceKey = "HKLM:\SYSTEM\CurrentControlSet\Services\Grafana Agent"
+
+# Step 1: Stop the service
+Write-Host "Stopping Grafana Agent service..."
+Stop-Service -Name "Grafana Agent" -Force
+
+# Step 2: Update the ImagePath in the registry
+Write-Host "Updating registry to run Grafana Agent in flow mode..."
+Set-ItemProperty -Path $serviceKey -Name ImagePath -Value $flowModePath
+
+# Step 3: Start the service again
+Write-Host "Starting Grafana Agent service..."
+Start-Service -Name "Grafana Agent"
+
+# Step 4: Confirm the new ImagePath
+$currentPath = Get-ItemProperty -Path $serviceKey -Name ImagePath
+Write-Host "✅ Updated ImagePath:" $currentPath.ImagePath
